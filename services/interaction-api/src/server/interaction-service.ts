@@ -1,8 +1,9 @@
+import { defineCachedFunction } from 'nitro/cache';
 import { ProductNotFoundError } from '../clients/errors';
 import type { MockServiceClient } from '../clients/mock-service';
 import type { ProductIngredients } from '../domain/match-interactions';
 import { matchInteractions } from '../domain/match-interactions';
-import { createFetchCache } from './fetch-cache';
+import { logger } from '../logger';
 import type {
   InteractionResult,
   InteractionService,
@@ -47,19 +48,44 @@ async function resolveProduct(reads: CachedReads, productId: string): Promise<Re
 
 type CachedReads = ReturnType<typeof createCachedReads>;
 
-/** All upstream reads go through the per-instance fetch cache (TTL + dedup). */
+/**
+ * All upstream reads go through Nitro's cache, which gives us the three rules
+ * this service needs: a fresh entry is served from storage, concurrent callers
+ * for the same key share one in-flight call, and a rejected call is evicted
+ * rather than cached, so the next request retries.
+ *
+ * `swr: false` is load-bearing, not cosmetic. Under Nitro's default
+ * (`swr: true`) an expired entry plus a failing upstream *resolves with the
+ * stale value* and demotes the error to a log line — and because `staleMaxAge`
+ * is unset, it would do so with no upper bound on staleness. That would
+ * silently invert the fail-closed policy of decision 7, so the whole point of
+ * this option is that the request waits for a fresh value and rejects if it
+ * cannot get one.
+ *
+ * Storage is the `cache` mount point (in-memory per instance by default), so
+ * moving to a shared Redis cache is a nitro.config.ts change, not a code one.
+ */
 function createCachedReads(client: MockServiceClient, options: InteractionServiceOptions) {
-  const cache = createFetchCache();
+  // Only fires for cache storage faults; a failing upstream read is rethrown to
+  // the caller instead, and logged by the handler that maps it to a 502.
+  const onError = (error: unknown) =>
+    logger.warn('cache storage error', { error: error instanceof Error ? error.message : error });
 
   return {
-    catalog: () =>
-      cache.fetch('interactions', () => client.getInteractions(), options.catalogTtlMs),
-    ingredients: (productId: string) =>
-      cache.fetch(
-        `ingredients:${productId}`,
-        () => client.getIngredients(productId),
-        options.productTtlMs,
-      ),
+    catalog: defineCachedFunction(() => client.getInteractions(), {
+      name: 'interaction-catalog',
+      getKey: () => 'catalog',
+      maxAge: options.catalogTtlMs / 1000, // Nitro counts seconds; config is ms.
+      swr: false,
+      onError,
+    }),
+    ingredients: defineCachedFunction((productId: string) => client.getIngredients(productId), {
+      name: 'product-ingredients',
+      getKey: (productId: string) => productId,
+      maxAge: options.productTtlMs / 1000,
+      swr: false,
+      onError,
+    }),
   };
 }
 

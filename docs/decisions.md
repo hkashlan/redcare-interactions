@@ -4,15 +4,19 @@ Each entry says what I decided, why, and what I gave up. Roughly in build order:
 
 ## 1. Biome for formatting and linting
 
-Set up before any code, so every file follows the same rules. One tool and one config file replace ESLint + Prettier, and also sort imports (`pnpm check` / `pnpm check:fix`). It is fast enough to run on save. `vcs.useIgnoreFile` reuses `.gitignore`, so generated files like `routeTree.gen.ts` are skipped.
+Set up before any code, so every file follows the same rules. One tool and one config file replace ESLint + Prettier, and also sort imports (`pnpm check` / `pnpm check:fix`). It is fast enough to run on save. `vcs.useIgnoreFile` reuses `.gitignore`, so build output like `.output/` and `.nitro/` is skipped.
 
 *Tradeoff:* fewer rules than ESLint, and no type-aware linting — `tsc --noEmit` in `pnpm typecheck` covers that instead.
 
-## 2. TypeScript + TanStack Start
+## 2. TypeScript + Nitro
 
-The challenge allows any stack, so I picked the one I'm fastest in and spent the time on design and edge cases. The structure (handlers → service → domain → HTTP client) does not depend on the framework.
+The challenge allows any stack, so I picked the one I'm fastest in and spent the time on design and edge cases. Within that, the service is API-only — no pages, no client bundle — so it runs on Nitro directly rather than a full-stack framework on top of it. A route file is one line: it hands `event.req` (a standard `Request`) to a handler and returns the handler's `Response`. Nothing above the route file imports Nitro.
 
-*Tradeoff:* not Redcare's Java stack. The design is the part that transfers, not the language.
+I started on TanStack Start and moved down to the Nitro server it already builds on, once it was clear nothing was rendering: the root route existed only because the router demanded one, and React, `react-dom` and the generated route tree were shipping in a service with no UI. Removing that layer dropped 85 packages and the whole client build step.
+
+The migration is the evidence for decision 3 rather than an exception to it. Handlers were already plain `(Request) => Response` functions, so swapping the framework touched the two route files and the build config — no domain, service, client, or cache code, and no test changed. The tests never booted a server, so every one of them passed untouched.
+
+*Tradeoff:* not Redcare's Java stack. The design is the part that transfers, not the language. Nitro 3 is also still beta — acceptable here because it was already the runtime underneath, so this removed a layer rather than adding risk, and a web-standard `fetch` handler is portable if it needs to move.
 
 ## 3. Layered modules, each with its own `.dto.ts`
 
@@ -55,13 +59,15 @@ The main healthcare call, and deliberately not symmetric:
 
 *Tradeoff:* the frontend has to check `meta.unknownProductIds`. All-or-nothing would be simpler but unsafe.
 
-## 8. Hand-rolled per-instance read-through cache with short TTLs
+## 8. Nitro's cache for upstream reads, with `swr` deliberately off
 
-Upstream data can change without a deploy, so the cache is TTL-based (30 s by default, env-tunable) rather than load-once. `src/server/fetch-cache.ts` is a `Map` of key → in-flight-or-settled promise, and the whole caching policy is three rules in ~40 lines: a fresh entry is served straight back, concurrent callers for the same key await the one in-flight fetch, and a rejected fetch is dropped from the map instead of cached, so upstream errors fail closed and the next call retries. Expired entries are swept once the map grows past a cap, which bounds it to the keys actually read within one TTL window.
+Upstream data can change without a deploy, so caching is TTL-based (30 s by default, env-tunable) rather than load-once. Both reads are wrapped in `defineCachedFunction` from `nitro/cache`, which gives the three rules this service needs without owning the code: a fresh entry is served from storage, concurrent callers for the same key share one in-flight call, and a rejected call is evicted rather than stored, so upstream errors fail closed and the next request retries.
 
-The cache lives in the composition root (`src/server/app.ts`), which builds the client → service → handler chain once per process, so entries survive across requests rather than being rebuilt per request.
+The payoff is the storage seam. Entries live in Nitro's `cache` mount point, in memory per instance by default, so moving to a cache shared across instances is a `nitro.config.ts` change (`storage: { cache: { driver: 'redis' } }`) rather than a rewrite — the production step that used to be listed below is now configuration.
 
-*Tradeoff:* a caching library would have brought retry, backoff and stale-while-revalidate along with it; those are now code I would have to write (see production notes). With N instances, worst case is N cache misses per TTL window, and instances can disagree for up to one TTL. Fine here; see production notes for a shared cache.
+**`swr: false` is the load-bearing part.** Nitro defaults to `swr: true`, and under that default an entry past its TTL plus an upstream that is now failing *resolves with the stale value* and demotes the error to a log line — and because `staleMaxAge` is unset, with no upper bound on how old that value may be. That silently inverts decision 7: a 502 the frontend can react to becomes a 200 carrying interaction data of unknown age, and a newly added warning would never appear. I verified both behaviours directly against the library before choosing, and a service test now pins it — flipping `swr` back to `true` fails `fails closed rather than serving a stale catalog when the upstream is down`.
+
+*Tradeoff:* caching is now process-global storage keyed by cache name rather than a map owned by the service instance, so the tests have to clear that storage between cases (`.clear()` is a no-op on the default mount, so keys are removed individually). The policy is also a library's to keep now, not mine — hence the pinning test, since the safe setting is the non-default one. SWR and retry with backoff are available here if wanted; they are deliberately not on (see production notes).
 
 ## 9. Hand-rolled structured logger
 
@@ -91,7 +97,7 @@ The layering in decision 3 exists so each layer can be tested against a fake of 
 
 - **Domain** — `matchInteractions()` is called with plain arrays. The matching rule, involvement mapping, and edge cases (empty ingredient lists, one product carrying both ingredients) are covered with no client at all.
 - **Service** — driven with a fake `MockServiceClient`, the only practical way to assert the interesting behaviour: a 404 for one product giving partial success, an `UpstreamError` propagating, the cache deduplicating repeated reads.
-- **Cache** — the rules of decision 8 asserted directly against a fake fetcher and fake timers: a hit inside the TTL, a refetch after it, concurrent callers sharing one fetch, and a rejection never being cached. Owning the cache means owning its tests.
+- **Caching** — asserted through the service rather than against the cache, since the mechanism is now a library (decision 8): a hit inside the TTL, a refetch after it, concurrent callers sharing one fetch, a rejection never being cached, and every concurrent caller of a failing fetch rejecting. The one that matters most pins `swr: false`, because there the *default* is the unsafe setting.
 - **Client** — `fetch` is stubbed, so the tests cover what this layer owns: exact URLs and query encoding, zod parsing, and 404 vs 5xx becoming `ProductNotFoundError` vs `UpstreamError`.
 - **Handlers** — a fake `InteractionService` and a real `Request`, asserting status codes, error bodies, id parsing (repeated and comma-separated parameters, dedup, the 100-id cap), and the `x-request-id` echo.
 
@@ -128,7 +134,7 @@ Mermaid rather than exported images because the diagrams live in the same file a
 ## What I would do next in production
 
 - **Resilience:** retries with backoff and jitter for upstream reads, a circuit breaker around the client, and stale-while-revalidate during short upstream blips.
-- **Caching at scale:** a shared cache (e.g. Redis), or upstream ETag / `Cache-Control` support, once instance count or data size grows.
+- **Caching at scale:** point the `cache` storage mount at Redis (config only, see decision 8), or add upstream ETag / `Cache-Control` support, once instance count or data size grows.
 - **Observability:** metrics (request rate, latency, error rate, cache hit ratio, upstream latency).
 - **Contracts:** consumer-driven contract tests against the upstream spec, and a published machine-readable contract for our own consumers.
 - **API evolution:** a `POST` variant for large baskets, and severity levels on interactions if the data ever provides them.

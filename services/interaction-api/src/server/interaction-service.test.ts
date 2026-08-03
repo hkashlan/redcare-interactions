@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useStorage } from 'nitro/storage';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProductNotFoundError, UpstreamError } from '../clients/errors';
 import type { MockServiceClient } from '../clients/mock-service';
 import { createInteractionService } from './interaction-service';
@@ -42,6 +43,17 @@ function service(client: MockServiceClient) {
     productTtlMs: PRODUCT_TTL_MS,
   });
 }
+
+/**
+ * Nitro's cache lives in process-global storage keyed by cache name, not in a
+ * map owned by the service, so entries outlive the service each test builds and
+ * would otherwise leak between tests. `.clear()` is a no-op on the default
+ * mount here, so the keys are removed one by one.
+ */
+beforeEach(async () => {
+  const storage = useStorage();
+  await Promise.all((await storage.getKeys('cache')).map((key) => storage.removeItem(key)));
+});
 
 afterEach(() => {
   vi.useRealTimers();
@@ -193,5 +205,42 @@ describe('createInteractionService', () => {
 
     expect(result.interactions.map((i) => i.interactionId)).toEqual(['int-ibu-alcohol']);
     expect(getInteractions).toHaveBeenCalledTimes(2);
+  });
+
+  // Guards `swr: false`. Under Nitro's default (`swr: true`) this resolves with
+  // the stale catalog and demotes the upstream failure to a log line, which
+  // would turn a fail-closed 502 into a silently outdated 200.
+  it('fails closed rather than serving a stale catalog when the upstream is down', async () => {
+    vi.useFakeTimers();
+    const getInteractions = vi
+      .fn()
+      .mockResolvedValueOnce(catalog)
+      .mockRejectedValue(new UpstreamError('catalog down'));
+    const svc = service(fakeClient({ getInteractions }));
+
+    await svc.getInteractionsForProducts(['04114918']);
+    vi.advanceTimersByTime(CATALOG_TTL_MS + 1);
+
+    await expect(svc.getInteractionsForProducts(['04114918'])).rejects.toBeInstanceOf(
+      UpstreamError,
+    );
+    expect(getInteractions).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects every concurrent caller when a shared fetch fails', async () => {
+    const client = fakeClient({
+      getInteractions: vi.fn(async () => {
+        throw new UpstreamError('catalog down');
+      }),
+    });
+    const svc = service(client);
+
+    const outcomes = await Promise.allSettled([
+      svc.getInteractionsForProducts(['04114918']),
+      svc.getInteractionsForProducts(['10019621']),
+    ]);
+
+    expect(outcomes.map((o) => o.status)).toEqual(['rejected', 'rejected']);
+    expect(client.getInteractions).toHaveBeenCalledTimes(1);
   });
 });

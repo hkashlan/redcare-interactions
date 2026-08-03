@@ -7,11 +7,11 @@ The interaction-api is a backend-for-frontend: it aggregates the catalog and one
 ```mermaid
 flowchart LR
     Widget["Frontend widget<br/>(interaction warnings)"]
-    subgraph interactionApi ["interaction-api :3000 (TanStack Start)"]
+    subgraph interactionApi ["interaction-api :3000 (Nitro)"]
         Handler["Route handler<br/>validation · request id · error mapping"]
         Service["Interaction service<br/>orchestration · error policy"]
         Domain["Domain: matchInteractions()<br/>pure, no I/O"]
-        Cache["Read-through fetch cache<br/>(TTL + dedup, per instance)"]
+        Cache["Nitro cache<br/>(TTL + dedup, swr off)"]
         Client["Mock-service client<br/>fetch · timeout · zod parse · typed errors"]
     end
     Mock["mock-service :8080 (Java)"]
@@ -29,7 +29,7 @@ The upstream's `GET /product` (name, description) is deliberately unused: the ca
 
 Layering rules:
 
-- **Route files** (`src/routes/api/*`) contain no logic; they wire plain `(Request) => Response` handlers into TanStack Start.
+- **Route files** (`src/routes/api/*`) contain no logic; they wire plain `(Request) => Response` handlers into Nitro — one line each, handing `event.req` to the handler.
 - **Handlers** validate input (zod), manage the request id, and map service outcomes/errors to HTTP.
 - **The service** orchestrates: it fetches the interaction catalog and the per-product ingredient lists in parallel, all through the cache; it owns the partial-success vs fail-closed policy.
 - **The domain module** is a pure function — the entire business rule (an interaction applies iff all required ingredient ids appear in the union of the basket's ingredients) with no I/O or framework imports.
@@ -69,13 +69,13 @@ Each applying entry becomes one `interactions[]` element in the response, with `
 
 ## Caching
 
-All upstream reads go through `src/server/fetch-cache.ts`, a small read-through cache over the client's fetches (no dependency):
+Both upstream reads are wrapped in `defineCachedFunction` from `nitro/cache` (`src/server/interaction-service.ts`):
 
 - Each key is cached for a TTL — the catalog and per-product ingredient lists default to 30 s (`CATALOG_TTL_MS`, `PRODUCT_TTL_MS`), because data can change independently of deployments.
-- Concurrent requests for the same key are deduplicated into one upstream fetch: callers share the in-flight promise.
-- Failures are never cached — a rejected fetch is dropped from the cache, so upstream errors surface immediately, the API fails closed, and the next request retries.
-- Expired entries are swept once the cache grows past its cap, bounding it to the keys read within one TTL window.
-- The cache is per instance, which stays correct when multiple instances run — each instance is at most one TTL behind.
+- Concurrent requests for the same key are deduplicated into one upstream fetch: callers share the in-flight call.
+- Failures are never cached — a rejected call is evicted, so upstream errors surface immediately, the API fails closed, and the next request retries.
+- **`swr: false` is set deliberately.** Nitro's default (`swr: true`) would serve a stale entry when the upstream is failing and log the error instead of raising it, which would turn a fail-closed 502 into a silently outdated 200 (see decision 8). A service test pins this.
+- Entries live in Nitro's `cache` storage mount — in memory per instance by default, which stays correct when multiple instances run, since each is at most one TTL behind. Pointing that mount at Redis is a `nitro.config.ts` change.
 
 ## Request flow
 

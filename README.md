@@ -7,7 +7,7 @@ Solution for the Redcare product interactions coding challenge ([challenge.md](c
 | Path | Description |
 | --- | --- |
 | [services/mock-service](services/mock-service) | Provided Java/Spring Boot mock service (treated as an external dependency), port 8080 |
-| [services/interaction-api](services/interaction-api) | **The solution**: interaction API for the frontend widget (TypeScript, TanStack Start, API-only), port 3000 |
+| [services/interaction-api](services/interaction-api) | **The solution**: interaction API for the frontend widget (TypeScript, Nitro, API-only), port 3000 |
 | [docs/architecture.md](docs/architecture.md) | Component and request-flow diagrams |
 | [docs/decisions.md](docs/decisions.md) | Design decisions, tradeoffs, assumptions, production notes |
 
@@ -99,6 +99,6 @@ Full API reference: [services/interaction-api/README.md](services/interaction-ap
 ## Notes for reviewers
 
 - The service is written in TypeScript — the challenge allows any technology, and I chose the stack I'm most fluent in. The design itself is language-agnostic: thin handlers → service → pure domain module → typed client.
-- Upstream reads go through a per-instance read-through fetch cache with short TTLs (TTL, concurrent-fetch dedup, no caching of failures — no dependency). Safe with multiple instances; a distributed cache is a production step, not a requirement here.
+- Upstream reads go through Nitro's cache with short TTLs (TTL, concurrent-fetch dedup, no caching of failures, and `swr` off so a failing upstream never hides behind stale data). In memory per instance by default and safe with multiple instances; switching to a shared Redis cache is a config change.
 - The core matching logic is a pure function with no I/O, unit-tested in isolation; client, service, and handlers each have their own test seams (all developed test-first).
 - Assumptions and "what I'd do next in production" are listed in [docs/decisions.md](docs/decisions.md).

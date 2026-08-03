@@ -1,6 +1,6 @@
 # interaction-api
 
-API-only TanStack Start service that powers a frontend interaction-warning widget. It accepts a list of product ids, resolves their ingredients from the mock service, matches the interaction catalog against the basket, and returns render-ready warning data.
+API-only Nitro service that powers a frontend interaction-warning widget. It accepts a list of product ids, resolves their ingredients from the mock service, matches the interaction catalog against the basket, and returns render-ready warning data.
 
 ## Requirements
 
@@ -132,5 +132,5 @@ Code map:
 - `src/clients/mock-service.ts` — typed fetch client (zod-parsed, timeouts, typed errors)
 - `src/server/interaction-service.ts` — orchestration: parallel fetches, cache, error policy
 - `src/server/handlers/` — plain `(Request) => Response` handlers (testable without a server)
-- `src/routes/api/` — TanStack Start route files that only wire handlers in
+- `src/routes/api/` — Nitro route files that only wire handlers in (one line each)
 - `src/server/schemas.ts` — zod schemas; the response schema doubles as the public contract
