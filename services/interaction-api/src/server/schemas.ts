@@ -3,7 +3,6 @@ import { z } from 'zod';
 /**
  * The public contract of GET /api/interactions.
  *
- * Design (see docs/plan.md, Phase 3):
  * - Interaction-centric response: one entry per applicable interaction, so the
  *   widget renders one warning card per entry without further joins.
  * - Product names are inlined (`products`), so the widget needs no extra calls.
@@ -63,7 +62,7 @@ export const interactionsResponseBodySchema = z.object({
 /** Error body shape shared by 400/502 responses. */
 export const errorResponseBodySchema = z.object({
   error: z.object({
-    code: z.enum(['INVALID_REQUEST', 'UPSTREAM_UNAVAILABLE']),
+    code: z.enum(['INVALID_REQUEST', 'UPSTREAM_UNAVAILABLE', 'INTERNAL_ERROR']),
     message: z.string(),
     requestId: z.string(),
     issues: z.array(z.object({ path: z.string(), message: z.string() })).optional(),
