@@ -1,0 +1,5 @@
+# pnpm settings for this package.
+# esbuild's postinstall sets up its platform binary; it is required by
+# nitropack (the production server bundler), so its build script is allowed.
+allowBuilds:
+  esbuild: true

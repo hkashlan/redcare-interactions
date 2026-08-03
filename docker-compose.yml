@@ -1,0 +1,14 @@
+services:
+  mock-service:
+    build: ./services/mock-service
+    ports:
+      - "8080:8080"
+
+  interaction-api:
+    build: ./services/interaction-api
+    ports:
+      - "3000:3000"
+    environment:
+      MOCK_SERVICE_URL: http://mock-service:8080
+    depends_on:
+      - mock-service
