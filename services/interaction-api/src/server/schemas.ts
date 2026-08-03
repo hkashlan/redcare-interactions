@@ -5,10 +5,12 @@ import { z } from 'zod';
  *
  * - Interaction-centric response: one entry per applicable interaction, so the
  *   widget renders one warning card per entry without further joins.
- * - Product names are inlined (`products`), so the widget needs no extra calls.
- * - Unknown product ids degrade to partial success: they appear with
- *   status "unknown" and in `meta.unknownProductIds`, while warnings for the
- *   rest of the basket are still returned.
+ * - Products are referenced by id only. The caller supplied the basket, so it
+ *   already has whatever names it renders; fetching them here would double the
+ *   upstream reads to add data nobody asked for.
+ * - Unknown product ids degrade to partial success: they are listed in
+ *   `meta.unknownProductIds`, while warnings for the rest of the basket are
+ *   still returned.
  */
 
 const productIdSchema = z
@@ -35,19 +37,6 @@ export const interactionsQuerySchema = z.object({
     .pipe(z.array(z.string()).max(100, 'too many productIds (max 100)')),
 });
 
-/** A requested product; `name` is present only when the status is "resolved". */
-export const apiProductSchema = z.discriminatedUnion('status', [
-  z.object({
-    productId: z.string(),
-    status: z.literal('resolved'),
-    name: z.string(),
-  }),
-  z.object({
-    productId: z.string(),
-    status: z.literal('unknown'),
-  }),
-]);
-
 /** One applicable interaction — the widget renders one warning card per entry. */
 export const apiInteractionSchema = z.object({
   interactionId: z.string(),
@@ -56,8 +45,12 @@ export const apiInteractionSchema = z.object({
   involvedIngredientIds: z.array(z.string()),
 });
 
+/**
+ * `meta.requestedProductIds` is the basket as this service evaluated it —
+ * deduplicated and in first-seen order — so a client can tell which of its ids
+ * were actually considered, and `unknownProductIds` is a subset of it.
+ */
 export const interactionsResponseBodySchema = z.object({
-  products: z.array(apiProductSchema),
   interactions: z.array(apiInteractionSchema),
   meta: z.object({
     requestedProductIds: z.array(z.string()),
@@ -76,7 +69,6 @@ export const errorResponseBodySchema = z.object({
 });
 
 export type InteractionsQuery = z.infer<typeof interactionsQuerySchema>;
-export type ApiProduct = z.infer<typeof apiProductSchema>;
 export type ApiInteraction = z.infer<typeof apiInteractionSchema>;
 export type InteractionsResponseBody = z.infer<typeof interactionsResponseBodySchema>;
 export type ErrorResponseBody = z.infer<typeof errorResponseBodySchema>;

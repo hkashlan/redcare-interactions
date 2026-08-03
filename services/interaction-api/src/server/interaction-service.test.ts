@@ -3,17 +3,9 @@ import { ProductNotFoundError, UpstreamError } from '../clients/errors';
 import type { MockServiceClient } from '../clients/mock-service';
 import { createInteractionService } from './interaction-service';
 
-const products: Record<string, { name: string; description: string; ingredientIds: string[] }> = {
-  '04114918': {
-    name: 'Ibuprofen 400',
-    description: 'Pain relief',
-    ingredientIds: ['ing-ibu-001', 'ing-exc-010'],
-  },
-  '10019621': {
-    name: 'Aspirin Complex',
-    description: 'Cold relief',
-    ingredientIds: ['ing-asa-002', 'ing-exc-010'],
-  },
+const ingredientsByProductId: Record<string, string[]> = {
+  '04114918': ['ing-ibu-001', 'ing-exc-010'],
+  '10019621': ['ing-asa-002', 'ing-exc-010'],
 };
 
 const catalog = [
@@ -31,15 +23,10 @@ const catalog = [
 
 function fakeClient(overrides: Partial<MockServiceClient> = {}): MockServiceClient {
   return {
-    getProduct: vi.fn(async (productId: string) => {
-      const entry = products[productId];
-      if (!entry) throw new ProductNotFoundError(productId);
-      return { productId, name: entry.name, description: entry.description };
-    }),
     getIngredients: vi.fn(async (productId: string) => {
-      const entry = products[productId];
-      if (!entry) throw new ProductNotFoundError(productId);
-      return { productId, ingredientIds: entry.ingredientIds };
+      const ingredientIds = ingredientsByProductId[productId];
+      if (!ingredientIds) throw new ProductNotFoundError(productId);
+      return { productId, ingredientIds };
     }),
     getInteractions: vi.fn(async () => catalog),
     ...overrides,
@@ -64,10 +51,6 @@ describe('createInteractionService', () => {
   it('resolves products and matches interactions across the basket', async () => {
     const result = await service(fakeClient()).getInteractionsForProducts(['04114918', '10019621']);
 
-    expect(result.products).toEqual([
-      { productId: '04114918', status: 'resolved', name: 'Ibuprofen 400' },
-      { productId: '10019621', status: 'resolved', name: 'Aspirin Complex' },
-    ]);
     expect(result.interactions.map((i) => i.interactionId)).toEqual([
       'int-ibu-alcohol',
       'int-ibu-asa',
@@ -78,10 +61,6 @@ describe('createInteractionService', () => {
   it('degrades to partial success when a product is unknown (upstream 404)', async () => {
     const result = await service(fakeClient()).getInteractionsForProducts(['04114918', '00000000']);
 
-    expect(result.products).toEqual([
-      { productId: '04114918', status: 'resolved', name: 'Ibuprofen 400' },
-      { productId: '00000000', status: 'unknown' },
-    ]);
     expect(result.interactions.map((i) => i.interactionId)).toEqual(['int-ibu-alcohol']);
     expect(result.unknownProductIds).toEqual(['00000000']);
   });
@@ -110,12 +89,11 @@ describe('createInteractionService', () => {
     );
   });
 
-  it('fetches product data and ingredients once per product', async () => {
+  it('fetches ingredients once per product and the catalog once', async () => {
     const client = fakeClient();
 
     await service(client).getInteractionsForProducts(['04114918', '10019621']);
 
-    expect(client.getProduct).toHaveBeenCalledTimes(2);
     expect(client.getIngredients).toHaveBeenCalledTimes(2);
     expect(client.getInteractions).toHaveBeenCalledTimes(1);
   });
@@ -156,18 +134,17 @@ describe('createInteractionService', () => {
     expect(client.getInteractions).toHaveBeenCalledTimes(1);
   });
 
-  it('caches product data within the TTL across requests', async () => {
+  it('caches product ingredients within the TTL across requests', async () => {
     const client = fakeClient();
     const svc = service(client);
 
     await svc.getInteractionsForProducts(['04114918']);
     await svc.getInteractionsForProducts(['04114918']);
 
-    expect(client.getProduct).toHaveBeenCalledTimes(1);
     expect(client.getIngredients).toHaveBeenCalledTimes(1);
   });
 
-  it('refetches product data after the TTL expires', async () => {
+  it('refetches product ingredients after the TTL expires', async () => {
     vi.useFakeTimers();
     const client = fakeClient();
     const svc = service(client);
@@ -176,7 +153,6 @@ describe('createInteractionService', () => {
     vi.advanceTimersByTime(PRODUCT_TTL_MS + 1);
     await svc.getInteractionsForProducts(['04114918']);
 
-    expect(client.getProduct).toHaveBeenCalledTimes(2);
     expect(client.getIngredients).toHaveBeenCalledTimes(2);
   });
 
@@ -189,7 +165,6 @@ describe('createInteractionService', () => {
       svc.getInteractionsForProducts(['04114918', '10019621']),
     ]);
 
-    expect(client.getProduct).toHaveBeenCalledTimes(2);
     expect(client.getIngredients).toHaveBeenCalledTimes(2);
   });
 

@@ -45,7 +45,6 @@ async function handleGetInteractions(
     });
 
     const body: InteractionsResponseBody = {
-      products: result.products,
       interactions: result.interactions,
       meta: { requestedProductIds: productIds, unknownProductIds: result.unknownProductIds },
     };

@@ -20,36 +20,17 @@ afterEach(() => {
 });
 
 describe('createMockServiceClient', () => {
-  it('fetches and parses a product', async () => {
+  it('fetches and parses ingredients', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(
-        jsonResponse({ productId: '04114918', name: 'Ibuprofen 400', description: 'Pain relief' }),
-      );
+      .mockResolvedValue(jsonResponse({ productId: '04114918', ingredientIds: ['ing-ibu-001'] }));
     vi.stubGlobal('fetch', fetchMock);
-
-    const product = await client().getProduct('04114918');
-
-    expect(product).toEqual({
-      productId: '04114918',
-      name: 'Ibuprofen 400',
-      description: 'Pain relief',
-    });
-    const requestedUrl = String(fetchMock.mock.calls[0]?.[0]);
-    expect(requestedUrl).toBe(`${BASE_URL}/product?productId=04114918`);
-  });
-
-  it('fetches and parses ingredients', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(jsonResponse({ productId: '04114918', ingredientIds: ['ing-ibu-001'] })),
-    );
 
     const ingredients = await client().getIngredients('04114918');
 
     expect(ingredients.ingredientIds).toEqual(['ing-ibu-001']);
+    const requestedUrl = String(fetchMock.mock.calls[0]?.[0]);
+    expect(requestedUrl).toBe(`${BASE_URL}/ingredients?productId=04114918`);
   });
 
   it('fetches and parses the interaction catalog', async () => {
@@ -77,19 +58,19 @@ describe('createMockServiceClient', () => {
   it('URL-encodes the product id', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(jsonResponse({ productId: 'a b', name: 'n', description: 'd' }));
+      .mockResolvedValue(jsonResponse({ productId: 'a b', ingredientIds: [] }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await client().getProduct('a b');
+    await client().getIngredients('a b');
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${BASE_URL}/product?productId=a+b`);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`${BASE_URL}/ingredients?productId=a+b`);
   });
 
   it('throws ProductNotFoundError on 404', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
 
     const error = await client()
-      .getProduct('00000000')
+      .getIngredients('00000000')
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(ProductNotFoundError);
@@ -113,7 +94,7 @@ describe('createMockServiceClient', () => {
       }),
     );
 
-    await expect(client(10).getProduct('04114918')).rejects.toBeInstanceOf(UpstreamError);
+    await expect(client(10).getIngredients('04114918')).rejects.toBeInstanceOf(UpstreamError);
   });
 
   it('throws UpstreamError on network failure', async () => {
@@ -128,12 +109,12 @@ describe('createMockServiceClient', () => {
       vi.fn().mockResolvedValue(jsonResponse({ productId: '04114918', unexpected: true })),
     );
 
-    await expect(client().getProduct('04114918')).rejects.toBeInstanceOf(UpstreamError);
+    await expect(client().getIngredients('04114918')).rejects.toBeInstanceOf(UpstreamError);
   });
 
   it('throws UpstreamError on invalid JSON', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 200 })));
 
-    await expect(client().getProduct('04114918')).rejects.toBeInstanceOf(UpstreamError);
+    await expect(client().getIngredients('04114918')).rejects.toBeInstanceOf(UpstreamError);
   });
 });

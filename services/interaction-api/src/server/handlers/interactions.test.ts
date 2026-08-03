@@ -4,10 +4,6 @@ import type { InteractionResult, InteractionService } from '../interaction-servi
 import { createInteractionsHandler } from './interactions';
 
 const happyResult: InteractionResult = {
-  products: [
-    { productId: '04114918', status: 'resolved', name: 'Ibuprofen 400' },
-    { productId: '10019621', status: 'resolved', name: 'Aspirin Complex' },
-  ],
   interactions: [
     {
       interactionId: 'int-ibu-asa',
@@ -28,7 +24,7 @@ function get(path: string, headers: Record<string, string> = {}): Request {
 }
 
 describe('createInteractionsHandler', () => {
-  it('returns 200 with products, interactions and meta', async () => {
+  it('returns 200 with interactions and meta', async () => {
     const handler = createInteractionsHandler(fakeService());
 
     const response = await handler(get('/api/interactions?productIds=04114918,10019621'));
@@ -36,7 +32,6 @@ describe('createInteractionsHandler', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('application/json');
-    expect(body.products).toHaveLength(2);
     expect(body.interactions[0].interactionId).toBe('int-ibu-asa');
     expect(body.meta).toEqual({
       requestedProductIds: ['04114918', '10019621'],
@@ -98,22 +93,17 @@ describe('createInteractionsHandler', () => {
   });
 
   it('reports unknown products as partial success', async () => {
-    const partial: InteractionResult = {
-      products: [
-        { productId: '04114918', status: 'resolved', name: 'Ibuprofen 400' },
-        { productId: '00000000', status: 'unknown' },
-      ],
-      interactions: [],
-      unknownProductIds: ['00000000'],
-    };
+    const partial: InteractionResult = { interactions: [], unknownProductIds: ['00000000'] };
     const handler = createInteractionsHandler(fakeService(partial));
 
     const response = await handler(get('/api/interactions?productIds=04114918,00000000'));
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.products[1]).toEqual({ productId: '00000000', status: 'unknown' });
-    expect(body.meta.unknownProductIds).toEqual(['00000000']);
+    expect(body.meta).toEqual({
+      requestedProductIds: ['04114918', '00000000'],
+      unknownProductIds: ['00000000'],
+    });
   });
 
   it('returns 400 with issues when productIds is missing', async () => {

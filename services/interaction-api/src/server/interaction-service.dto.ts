@@ -1,9 +1,7 @@
 import type { MatchedInteraction, ProductIngredients } from '../domain/match-interactions';
-import type { ApiProduct } from './schemas';
 
 /** What the service returns to the route layer. */
 export interface InteractionResult {
-  products: ApiProduct[];
   interactions: MatchedInteraction[];
   unknownProductIds: string[];
 }
@@ -19,6 +17,6 @@ export interface InteractionServiceOptions {
 
 /** One basket entry after upstream resolution: unknown products carry no ingredients. */
 export interface ResolvedProduct {
-  product: ApiProduct;
+  productId: string;
   ingredients: ProductIngredients | null;
 }

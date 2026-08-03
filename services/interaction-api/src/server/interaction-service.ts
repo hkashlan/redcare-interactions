@@ -9,7 +9,6 @@ import type {
   ResolvedProduct,
 } from './interaction-service.dto';
 import { cachedQuery, createQueryClient } from './query-client';
-import type { ApiProduct } from './schemas';
 
 export type * from './interaction-service.dto';
 
@@ -21,20 +20,13 @@ export function createInteractionService(
 
   async function resolveProduct(productId: string): Promise<ResolvedProduct> {
     try {
-      // Product metadata and ingredients are independent — fetch in parallel.
-      const [product, ingredients] = await Promise.all([
-        reads.product(productId),
-        reads.ingredients(productId),
-      ]);
-      return {
-        product: { productId, status: 'resolved', name: product.name },
-        ingredients: { productId, ingredientIds: ingredients.ingredientIds },
-      };
+      const ingredients = await reads.ingredients(productId);
+      return { productId, ingredients: { productId, ingredientIds: ingredients.ingredientIds } };
     } catch (error) {
       if (error instanceof ProductNotFoundError) {
         // A missing product is a data fact: degrade to partial success so one
         // delisted product cannot suppress warnings for the rest of the basket.
-        return { product: { productId, status: 'unknown' }, ingredients: null };
+        return { productId, ingredients: null };
       }
       // Anything else means we cannot know the ingredients: fail closed.
       throw error;
@@ -65,13 +57,6 @@ function createCachedReads(client: MockServiceClient, options: InteractionServic
         () => client.getInteractions(),
         options.catalogTtlMs,
       ),
-    product: (productId: string) =>
-      cachedQuery(
-        queryClient,
-        ['product', productId],
-        () => client.getProduct(productId),
-        options.productTtlMs,
-      ),
     ingredients: (productId: string) =>
       cachedQuery(
         queryClient,
@@ -86,15 +71,13 @@ function toInteractionResult(
   catalog: Awaited<ReturnType<MockServiceClient['getInteractions']>>,
   basket: ResolvedProduct[],
 ): InteractionResult {
-  const products: ApiProduct[] = [];
   const known: ProductIngredients[] = [];
   const unknownProductIds: string[] = [];
 
   for (const entry of basket) {
-    products.push(entry.product);
     if (entry.ingredients) known.push(entry.ingredients);
-    else unknownProductIds.push(entry.product.productId);
+    else unknownProductIds.push(entry.productId);
   }
 
-  return { products, interactions: matchInteractions(catalog, known), unknownProductIds };
+  return { interactions: matchInteractions(catalog, known), unknownProductIds };
 }

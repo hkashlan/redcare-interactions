@@ -6,12 +6,15 @@ import {
   type InteractionCatalogEntry,
   ingredientsResponseSchema,
   interactionsResponseSchema,
-  type ProductResponse,
-  productResponseSchema,
 } from './schemas';
 
+/**
+ * The upstream's `GET /product` (name and description) is deliberately not
+ * exposed: this API returns interaction warnings, and the caller already knows
+ * the products it asked about. A 404 from `/ingredients` is the same data fact,
+ * so unknown ids are still detected without a second read per product.
+ */
 export interface MockServiceClient {
-  getProduct(productId: string): Promise<ProductResponse>;
   getIngredients(productId: string): Promise<IngredientsResponse>;
   getInteractions(): Promise<InteractionCatalogEntry[]>;
 }
@@ -23,12 +26,6 @@ export interface MockServiceClientOptions {
 
 export function createMockServiceClient(options: MockServiceClientOptions): MockServiceClient {
   return {
-    getProduct(productId) {
-      const query = new URLSearchParams({ productId });
-      const notFound = () => new ProductNotFoundError(productId);
-      return request(options, `/product?${query}`, productResponseSchema, notFound);
-    },
-
     getIngredients(productId) {
       const query = new URLSearchParams({ productId });
       const notFound = () => new ProductNotFoundError(productId);

@@ -1,6 +1,6 @@
 # interaction-api
 
-API-only TanStack Start service that powers a frontend interaction-warning widget. It accepts a list of product ids, resolves product names and ingredients from the mock service, matches the interaction catalog against the basket, and returns render-ready warning data.
+API-only TanStack Start service that powers a frontend interaction-warning widget. It accepts a list of product ids, resolves their ingredients from the mock service, matches the interaction catalog against the basket, and returns render-ready warning data.
 
 ## Requirements
 
@@ -38,7 +38,7 @@ All configuration is via environment variables (see [.env.example](.env.example)
 | `MOCK_SERVICE_URL` | `http://localhost:8080` | Base URL of the mock service |
 | `UPSTREAM_TIMEOUT_MS` | `2000` | Timeout per upstream request |
 | `CATALOG_TTL_MS` | `30000` | In-memory cache TTL for the interaction catalog |
-| `PRODUCT_TTL_MS` | `30000` | In-memory cache TTL for product metadata and ingredients |
+| `PRODUCT_TTL_MS` | `30000` | In-memory cache TTL for a product's ingredient list |
 | `LOG_LEVEL` | `info` | Minimum severity to emit: `debug`, `info`, `warn` or `error` (case-insensitive; `debug` adds a line per upstream read). An unrecognised value falls back to `info` |
 
 ## API
@@ -56,10 +56,6 @@ curl 'http://localhost:3000/api/interactions?productIds=06313728&productIds=0411
 
 ```json
 {
-  "products": [
-    { "productId": "06313728", "status": "resolved", "name": "Warfarin 5" },
-    { "productId": "04114918", "status": "resolved", "name": "Ibuprofen 400" }
-  ],
   "interactions": [
     {
       "interactionId": "int-warfarin-ibu",
@@ -82,9 +78,11 @@ curl 'http://localhost:3000/api/interactions?productIds=06313728&productIds=0411
 
 Response semantics:
 
-- `products` — one entry per *distinct* requested id, in first-seen order (a repeated id is collapsed, so this can be shorter than the client's basket). `status: "resolved"` entries carry the display `name`; ids the upstream does not know come back as `status: "unknown"`.
 - `interactions` — one entry per applicable interaction. An interaction applies iff all of its required ingredient ids appear in the union of ingredients across the basket. `texts` are display-ready; `involvedProductIds` names the products that contributed the ingredients.
-- `meta.unknownProductIds` — ids that could not be resolved (partial success, still HTTP 200).
+- `meta.requestedProductIds` — the basket as this service evaluated it: one entry per *distinct* requested id, in first-seen order (a repeated id is collapsed, so this can be shorter than the client's basket).
+- `meta.unknownProductIds` — the subset the upstream does not know (partial success, still HTTP 200).
+
+Products appear as ids only. The caller supplied the basket, so it already holds whatever product names it renders; fetching them here would double the upstream reads per request to return data the caller did not ask for. If a consumer ever does need names in this response, `GET /product` is one added read per id behind the same cache.
 
 Error responses share one body shape:
 

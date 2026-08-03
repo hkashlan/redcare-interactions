@@ -32,10 +32,6 @@ returns (abridged):
 
 ```json
 {
-  "products": [
-    { "productId": "04114918", "status": "resolved", "name": "Ibuprofen 400" },
-    { "productId": "10019621", "status": "resolved", "name": "Aspirin Protect 100" }
-  ],
   "interactions": [
     {
       "interactionId": "int-ibu-asa",
@@ -90,10 +86,10 @@ Tests and checks (from `services/interaction-api`): `pnpm test`, `pnpm check` (B
 One endpoint serves the widget: `GET /api/interactions?productIds=a,b,c`.
 
 - **Interaction-centric response** — one entry per applicable interaction, so the widget renders one warning card per entry without joining data client-side. Each entry carries the display `texts`, plus `involvedProductIds`/`involvedIngredientIds` so a card can say *which* products clash.
-- **Product names inlined** — the widget needs no further calls; that is the point of this aggregation layer.
+- **Products by id only** — the caller supplied the basket, so it already has whatever names it renders. Fetching product metadata here would double the upstream reads per request to return data nobody asked for; this endpoint answers one question — *what interacts?*
 - **Matching rule** — an interaction applies iff *all* of its required ingredient ids are present in the union of ingredients across the requested products.
 - **Error semantics (the key healthcare-domain judgment call):**
-  - Unknown product id (upstream 404) → **partial success** (200): the product is reported with `status: "unknown"` and listed in `meta.unknownProductIds`, but warnings for the rest of the basket are still returned. One delisted product must not suppress everyone else's warnings.
+  - Unknown product id (upstream 404) → **partial success** (200): the id is listed in `meta.unknownProductIds`, but warnings for the rest of the basket are still returned. One delisted product must not suppress everyone else's warnings.
   - Upstream failure or timeout → **fail closed** (502): if ingredients are unknowable, the API must not imply "no interactions".
   - Invalid input → 400 with per-field issues.
 - **Diagnosability** — structured JSON logs, an `x-request-id` honoured or generated and echoed on every response, `GET /api/health`.

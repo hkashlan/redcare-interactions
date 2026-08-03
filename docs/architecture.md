@@ -2,7 +2,7 @@
 
 ## System overview
 
-The interaction-api is a backend-for-frontend: it aggregates three upstream reads into the one response the widget needs.
+The interaction-api is a backend-for-frontend: it aggregates the catalog and one ingredient read per product into the single response the widget needs.
 
 ```mermaid
 flowchart LR
@@ -21,16 +21,17 @@ flowchart LR
     Service --> Domain
     Service --> Cache
     Cache --> Client
-    Client -->|"GET /product?productId="| Mock
     Client -->|"GET /ingredients?productId="| Mock
     Client -->|"GET /interactions (catalog)"| Mock
 ```
+
+The upstream's `GET /product` (name, description) is deliberately unused: the caller already knows the products it asked about, so fetching their names would double the reads per request to return data it already has. See decision 6.
 
 Layering rules:
 
 - **Route files** (`src/routes/api/*`) contain no logic; they wire plain `(Request) => Response` handlers into TanStack Start.
 - **Handlers** validate input (zod), manage the request id, and map service outcomes/errors to HTTP.
-- **The service** orchestrates: it fetches the interaction catalog and, per product, metadata + ingredients in parallel, all through the cache; it owns the partial-success vs fail-closed policy.
+- **The service** orchestrates: it fetches the interaction catalog and the per-product ingredient lists in parallel, all through the cache; it owns the partial-success vs fail-closed policy.
 - **The domain module** is a pure function — the entire business rule (an interaction applies iff all required ingredient ids appear in the union of the basket's ingredients) with no I/O or framework imports.
 - **The client** is the only place that talks HTTP to the upstream: per-request timeout (`AbortSignal.timeout`), zod-validated bodies, and typed errors (`ProductNotFoundError`, `UpstreamError`) so upper layers never inspect status codes.
 
@@ -70,7 +71,7 @@ Each applying entry becomes one `interactions[]` element in the response, with `
 
 All upstream reads go through a server-side TanStack Query `QueryClient` (`@tanstack/query-core`, no React):
 
-- `staleTime` acts as the TTL — catalog and product data default to 30 s (`CATALOG_TTL_MS`, `PRODUCT_TTL_MS`), because data can change independently of deployments.
+- `staleTime` acts as the TTL — the catalog and per-product ingredient lists default to 30 s (`CATALOG_TTL_MS`, `PRODUCT_TTL_MS`), because data can change independently of deployments.
 - Concurrent requests for the same key are deduplicated into one upstream fetch.
 - Failures are never cached, and `retry` is disabled so upstream errors surface immediately and the API fails closed.
 - The cache is per instance, which stays correct when multiple instances run — each instance is at most one TTL behind.
@@ -94,15 +95,15 @@ sequenceDiagram
     par catalog and per-product reads (cached)
         S->>C: catalog()
         C->>M: GET /interactions
-        S->>C: product(A) + ingredients(A)
-        C->>M: GET /product, /ingredients
-        S->>C: product(B) + ingredients(B)
-        C->>M: GET /product, /ingredients
+        S->>C: ingredients(A)
+        C->>M: GET /ingredients?productId=A
+        S->>C: ingredients(B)
+        C->>M: GET /ingredients?productId=B
     end
     alt product B unknown (upstream 404)
         M-->>C: 404
         C-->>S: ProductNotFoundError
-        S->>S: mark B "unknown", keep going
+        S->>S: mark B unknown, keep going
         S-->>H: result (A's warnings, B in unknownProductIds)
         H-->>W: 200 partial success
     else upstream error / timeout
@@ -112,7 +113,7 @@ sequenceDiagram
         H-->>W: 502 UPSTREAM_UNAVAILABLE + requestId
     else all resolved
         S->>S: matchInteractions(catalog, basket)
-        S-->>H: products + interactions
+        S-->>H: interactions + unknownProductIds
         H-->>W: 200 full response
     end
 ```
