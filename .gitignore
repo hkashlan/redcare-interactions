@@ -38,3 +38,12 @@ Desktop.ini
 *.swo
 *~
 /target/
+
+# Node / TanStack Start
+node_modules/
+.output/
+.nitro/
+.tanstack/
+dist/
+coverage/
+*.tsbuildinfo
