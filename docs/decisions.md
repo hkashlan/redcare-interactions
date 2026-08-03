@@ -44,7 +44,7 @@ Products come back as ids, without names or descriptions. An earlier version cal
 
 Unknown ids are still caught: `GET /ingredients` returns its own 404 for an id the upstream does not know, which is the same fact the product read used to give us. Without `name`, a `products[]` array would only hold `{productId, status}` — already derivable from `meta.requestedProductIds` and `meta.unknownProductIds` — so it was dropped instead of kept as a duplicate.
 
-*Tradeoff:* a consumer that has ids but no names (an email renderer, a support tool) needs its own product lookup — one extra read per id, behind the same cache, if that ever comes up. Either way, this shape serves this widget rather than being a generic interactions resource.
+*Tradeoff:* a caller that has ids but no names (an email renderer, a support tool) has to look them up itself — one extra read per id, behind the same cache. This shape serves the widget, not every possible caller.
 
 ## 7. Partial success for unknown products, fail closed for upstream failures
 
@@ -55,11 +55,13 @@ The main healthcare call, and deliberately not symmetric:
 
 *Tradeoff:* the frontend has to check `meta.unknownProductIds`. All-or-nothing would be simpler but unsafe.
 
-## 8. Per-instance read-through cache (TanStack Query core) with short TTLs
+## 8. Hand-rolled per-instance read-through cache with short TTLs
 
-Upstream data can change without a deploy, so the cache is TTL-based (30 s by default, env-tunable) rather than load-once. `@tanstack/query-core` (no React) gives exactly what is needed: `staleTime` as the TTL, dedup of concurrent fetches for the same key, and no caching of failures. `retry` is off so upstream errors fail closed straight away.
+Upstream data can change without a deploy, so the cache is TTL-based (30 s by default, env-tunable) rather than load-once. `src/server/fetch-cache.ts` is a `Map` of key → in-flight-or-settled promise, and the whole caching policy is three rules in ~40 lines: a fresh entry is served straight back, concurrent callers for the same key await the one in-flight fetch, and a rejected fetch is dropped from the map instead of cached, so upstream errors fail closed and the next call retries. Expired entries are swept once the map grows past a cap, which bounds it to the keys actually read within one TTL window.
 
-*Tradeoff:* with N instances, worst case is N cache misses per TTL window, and instances can disagree for up to one TTL. Fine here; see production notes for a shared cache.
+The cache lives in the composition root (`src/server/app.ts`), which builds the client → service → handler chain once per process, so entries survive across requests rather than being rebuilt per request.
+
+*Tradeoff:* a caching library would have brought retry, backoff and stale-while-revalidate along with it; those are now code I would have to write (see production notes). With N instances, worst case is N cache misses per TTL window, and instances can disagree for up to one TTL. Fine here; see production notes for a shared cache.
 
 ## 9. Hand-rolled structured logger
 
@@ -89,6 +91,7 @@ The layering in decision 3 exists so each layer can be tested against a fake of 
 
 - **Domain** — `matchInteractions()` is called with plain arrays. The matching rule, involvement mapping, and edge cases (empty ingredient lists, one product carrying both ingredients) are covered with no client at all.
 - **Service** — driven with a fake `MockServiceClient`, the only practical way to assert the interesting behaviour: a 404 for one product giving partial success, an `UpstreamError` propagating, the cache deduplicating repeated reads.
+- **Cache** — the rules of decision 8 asserted directly against a fake fetcher and fake timers: a hit inside the TTL, a refetch after it, concurrent callers sharing one fetch, and a rejection never being cached. Owning the cache means owning its tests.
 - **Client** — `fetch` is stubbed, so the tests cover what this layer owns: exact URLs and query encoding, zod parsing, and 404 vs 5xx becoming `ProductNotFoundError` vs `UpstreamError`.
 - **Handlers** — a fake `InteractionService` and a real `Request`, asserting status codes, error bodies, id parsing (repeated and comma-separated parameters, dedup, the 100-id cap), and the `x-request-id` echo.
 
@@ -99,6 +102,18 @@ The layering in decision 3 exists so each layer can be tested against a fake of 
 The mock service moved to `services/mock-service/` and the new service sits next to it in `services/interaction-api/`, each with its own `Dockerfile` and toolchain (Maven, pnpm) rather than a shared build system. `docker-compose up` builds and runs both and wires them together, so a reviewer needs neither Java nor Node installed.
 
 *Tradeoff:* the vendored mock service can drift from the original. It is treated as read-only and left unmodified for that reason.
+
+## 14. Mermaid diagrams in the docs instead of prose-only explanation
+
+`docs/architecture.md` carries three mermaid diagrams, each answering a question a new developer asks in a different order:
+
+- **System overview** (flowchart) — which module calls which, so the layering of decision 3 is visible before reading any code, and it is obvious where a change belongs.
+- **Interaction matching** (flowchart) — the domain rule worked through with real mock data (warfarin + ibuprofen), including the cases that *don't* match, which is the part prose gets wordy about.
+- **Request flow** (sequence diagram) — one request end to end, with the parallel reads and all three outcomes (400, partial success, 502) in the same picture, so decision 7's error policy is read as a flow rather than a list of rules.
+
+Mermaid rather than exported images because the diagrams live in the same file as the text, render on GitHub and in most IDEs with nothing installed, and change in a normal diff — a wrong arrow is fixed in a pull request instead of in a drawing tool.
+
+*Tradeoff:* the diagrams are maintained by hand, so they can go stale if the layering changes and nobody updates them. Nothing in CI checks that they still match the code.
 
 ## Assumptions
 
@@ -114,6 +129,6 @@ The mock service moved to `services/mock-service/` and the new service sits next
 
 - **Resilience:** retries with backoff and jitter for upstream reads, a circuit breaker around the client, and stale-while-revalidate during short upstream blips.
 - **Caching at scale:** a shared cache (e.g. Redis), or upstream ETag / `Cache-Control` support, once instance count or data size grows.
-- **Observability:** metrics (request rate, latency, error rate, cache hit ratio, upstream latency), pino, and turning the correlation id of decision 10 into real tracing with W3C `traceparent` and OpenTelemetry.
+- **Observability:** metrics (request rate, latency, error rate, cache hit ratio, upstream latency).
 - **Contracts:** consumer-driven contract tests against the upstream spec, and a published machine-readable contract for our own consumers.
 - **API evolution:** a `POST` variant for large baskets, and severity levels on interactions if the data ever provides them.

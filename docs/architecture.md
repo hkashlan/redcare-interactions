@@ -11,7 +11,7 @@ flowchart LR
         Handler["Route handler<br/>validation · request id · error mapping"]
         Service["Interaction service<br/>orchestration · error policy"]
         Domain["Domain: matchInteractions()<br/>pure, no I/O"]
-        Cache["Read-through cache<br/>(TanStack Query core, TTL + dedup)"]
+        Cache["Read-through fetch cache<br/>(TTL + dedup, per instance)"]
         Client["Mock-service client<br/>fetch · timeout · zod parse · typed errors"]
     end
     Mock["mock-service :8080 (Java)"]
@@ -69,11 +69,12 @@ Each applying entry becomes one `interactions[]` element in the response, with `
 
 ## Caching
 
-All upstream reads go through a server-side TanStack Query `QueryClient` (`@tanstack/query-core`, no React):
+All upstream reads go through `src/server/fetch-cache.ts`, a small read-through cache over the client's fetches (no dependency):
 
-- `staleTime` acts as the TTL — the catalog and per-product ingredient lists default to 30 s (`CATALOG_TTL_MS`, `PRODUCT_TTL_MS`), because data can change independently of deployments.
-- Concurrent requests for the same key are deduplicated into one upstream fetch.
-- Failures are never cached, and `retry` is disabled so upstream errors surface immediately and the API fails closed.
+- Each key is cached for a TTL — the catalog and per-product ingredient lists default to 30 s (`CATALOG_TTL_MS`, `PRODUCT_TTL_MS`), because data can change independently of deployments.
+- Concurrent requests for the same key are deduplicated into one upstream fetch: callers share the in-flight promise.
+- Failures are never cached — a rejected fetch is dropped from the cache, so upstream errors surface immediately, the API fails closed, and the next request retries.
+- Expired entries are swept once the cache grows past its cap, bounding it to the keys read within one TTL window.
 - The cache is per instance, which stays correct when multiple instances run — each instance is at most one TTL behind.
 
 ## Request flow

@@ -99,6 +99,6 @@ Full API reference: [services/interaction-api/README.md](services/interaction-ap
 ## Notes for reviewers
 
 - The service is written in TypeScript — the challenge allows any technology, and I chose the stack I'm most fluent in. The design itself is language-agnostic: thin handlers → service → pure domain module → typed client.
-- Upstream reads go through a per-instance read-through cache with short TTLs (TanStack Query core: TTL, concurrent-fetch dedup, no caching of failures). Safe with multiple instances; a distributed cache is a production step, not a requirement here.
+- Upstream reads go through a per-instance read-through fetch cache with short TTLs (TTL, concurrent-fetch dedup, no caching of failures — no dependency). Safe with multiple instances; a distributed cache is a production step, not a requirement here.
 - The core matching logic is a pure function with no I/O, unit-tested in isolation; client, service, and handlers each have their own test seams (all developed test-first).
 - Assumptions and "what I'd do next in production" are listed in [docs/decisions.md](docs/decisions.md).
