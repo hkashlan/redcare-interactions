@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 // Kept separate from vite.config.ts so tests run without the TanStack Start plugin.
 export default defineConfig({
@@ -6,4 +6,4 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
   },
-})
+});
