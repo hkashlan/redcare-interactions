@@ -1,6 +1,21 @@
 # interaction-api
 
-API-only TanStack Start service that powers a frontend interaction-warning widget. It accepts a list of product ids, resolves their ingredients from the mock service, matches the interaction catalog against the basket, and returns render-ready warning data.
+API-only Nitro service that powers a frontend interaction-warning widget. It accepts a list of product ids, resolves their ingredients from the mock service, matches the interaction catalog against the basket, and returns render-ready warning data.
+
+It is deliberately small: one endpoint, and five source files with one job each.
+
+```
+src/routes/api/interactions.get.ts   the endpoint: query schema, error policy, response shape
+src/client/mock-service.ts           the upstream: contract, failure modes, cached reads
+src/domain/match-interactions.ts     the matching rule — pure, no I/O, no framework
+src/util/http.ts                     request ids and JSON responses
+src/util/logger.ts                   consola with a JSON reporter
+
+src/routes/api/interactions.get.test.ts
+src/client/mock-service.test.ts
+src/domain/match-interactions.test.ts
+src/test/upstream-server.ts          a real HTTP server speaking the mock service's contract
+```
 
 ## Requirements
 
@@ -31,19 +46,20 @@ docker run --rm -p 3000:3000 -e MOCK_SERVICE_URL=http://host.docker.internal:808
 
 ## Configuration
 
-All configuration is via environment variables (see [.env.example](.env.example)):
+Defaults live in [`nitro.config.ts`](nitro.config.ts) under `runtimeConfig` and are read with `useRuntimeConfig()`. Each is overridden from the environment (see [.env.example](.env.example)):
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `MOCK_SERVICE_URL` | `http://localhost:8080` | Base URL of the mock service |
 | `UPSTREAM_TIMEOUT_MS` | `2000` | Timeout per upstream request |
-| `CATALOG_TTL_MS` | `30000` | In-memory cache TTL for the interaction catalog |
-| `PRODUCT_TTL_MS` | `30000` | In-memory cache TTL for a product's ingredient list |
+| `CACHE_TTL_SECONDS` | `30` | How long an upstream read is cached (catalog and ingredient lists) |
 | `LOG_LEVEL` | `info` | Minimum severity to emit: `debug`, `info`, `warn` or `error` (case-insensitive; `debug` adds a line per upstream read). An unrecognised value falls back to `info` |
+
+Nitro's own `NITRO_`-prefixed form works too (`NITRO_MOCK_SERVICE_URL`); the plain names above are enabled by emptying `runtimeConfig.nitro.envPrefix`. Environment values arrive as strings, so the two numeric ones are coerced where they are read.
 
 ## API
 
-The contract is defined by the zod schemas in `src/server/schemas.ts`: the query schema validates every incoming request, and the response schemas are the source of the TypeScript types the handlers build their replies from.
+Both contracts are zod schemas: the incoming query in the route file, the upstream responses in `src/client/mock-service.ts`. The query schema validates every request; the upstream schemas make contract drift in the mock service an explicit `502` instead of a silent wrong answer.
 
 ### `GET /api/interactions?productIds=<id>,<id>,…`
 
@@ -98,9 +114,23 @@ Error responses share one body shape:
 
 Every response echoes the incoming `x-request-id` header (or a generated UUID) both as a response header and in error bodies, and the same id appears in the structured logs.
 
-### `GET /api/health`
+## Logging
 
-Liveness probe. Returns `200` with `{ "status": "ok" }`.
+[consola](https://github.com/unjs/consola) with a single reporter that emits one JSON line per event, so logs stay machine-parseable (consola's default formatting wraps objects over several lines, which a collector reads as several records):
+
+```json
+{"level":"info","time":"2026-08-03T21:39:51.181Z","message":"interactions request served","requestId":"ce5c595c-…","productCount":2,"interactionCount":4,"unknownCount":0,"durationMs":25}
+```
+
+One line per request — served, rejected (`warn`), failed upstream or unexpected (`error`) — plus one per upstream read at `LOG_LEVEL=debug`, which are effectively cache-miss lines.
+
+## Caching
+
+Both upstream reads go through [`defineCachedFunction`](https://nitro.build/guide/cache) from `nitro/cache`, keyed on `catalog` and on the product id, with a 30s TTL. That gives read-through caching, one shared in-flight call when concurrent requests want the same key, and eviction on failure so the next request retries — none of which needs code here.
+
+`swr: false` is load-bearing: under Nitro's default an expired entry plus a failing upstream *resolves with the stale value* and demotes the error to a log line, which would silently invert the fail-closed policy above.
+
+Storage is Nitro's `cache` mount point — in-memory per instance by default, so moving to a shared Redis cache is a `nitro.config.ts` change rather than a code change.
 
 ## Development
 
@@ -118,7 +148,7 @@ pnpm typecheck      # tsc --noEmit
 
 | Configuration | What it does |
 | --- | --- |
-| `interaction-api: dev server` | `pnpm dev` with the debugger attached and `LOG_LEVEL=debug`. Handlers, service, client and domain all run in the vite process, so breakpoints in `src/**` hit on every request |
+| `interaction-api: dev server` | `pnpm dev` with the debugger attached and `LOG_LEVEL=debug`. The route and the domain rule both run in the vite process, so breakpoints in `src/**` hit on every request |
 | `interaction-api: built server` | Runs `pnpm build` first, then `.output/server/index.mjs` — for anything that only reproduces in a production build |
 | `interaction-api: all tests` | Whole vitest suite, single-threaded, no test timeout |
 | `interaction-api: current test file` | Same, for the `*.test.ts` open in the editor |
@@ -126,11 +156,18 @@ pnpm typecheck      # tsc --noEmit
 
 The dev-server configuration needs the mock service on `localhost:8080`; the `mock-service: up` / `mock-service: down` tasks (`docker compose up -d mock-service`) start and stop it.
 
-Code map:
+### Tests
 
-- `src/domain/match-interactions.ts` — pure matching rule, no I/O
-- `src/clients/mock-service.ts` — typed fetch client (zod-parsed, timeouts, typed errors)
-- `src/server/interaction-service.ts` — orchestration: parallel fetches, cache, error policy
-- `src/server/handlers/` — plain `(Request) => Response` handlers (testable without a server)
-- `src/routes/api/` — TanStack Start route files that only wire handlers in
-- `src/server/schemas.ts` — zod schemas; the response schema doubles as the public contract
+42 tests in three files, with no mocks, stubs, spies or injected doubles anywhere:
+
+| File | What it covers |
+| --- | --- |
+| `src/domain/match-interactions.test.ts` | the matching rule as a pure function |
+| `src/client/mock-service.test.ts` | parsing, `404` vs. failure, contract drift, timeout, caching, no caching of failures |
+| `src/routes/api/interactions.get.test.ts` | the endpoint: 200 with `meta`, partial success, every 400 issue path, fail-closed 502, request-id handling |
+
+The two I/O suites run against `src/test/upstream-server.ts` — a real `node:http` server that answers `/interactions` and `/ingredients` like the Java service does. Nothing is injected and `fetch` is untouched, so a real socket, real status codes, real latency and real JSON parsing are all in the path; a test changes the upstream's *behaviour* (`catalog`, `ingredients`, `status`, `delayMs`) rather than swapping an implementation.
+
+The route is driven through `handler.fetch(request)` — the same entry point Nitro uses — with the real `nitro/cache` (emptied between cases) and the real `nitro.config.ts` defaults, repointed at the test server. Because the endpoint's test sits next to the route it tests, `nitro.config.ts` sets `ignore: ['**/*.test.ts']`; without it Nitro scans that file as a route and publishes `/api/interactions.get.test`.
+
+Rationale and the mutation checks used to verify the suite catches regressions: [decision 2](../../docs/decisions.md). End-to-end against the actual mock service: the curls in the [root README](../../README.md).
