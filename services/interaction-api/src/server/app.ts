@@ -1,5 +1,6 @@
 import { createMockServiceClient } from '../clients/mock-service';
 import { getConfig } from '../config';
+import { logger } from '../logger';
 import { createInteractionsHandler } from './handlers/interactions';
 import { createInteractionService } from './interaction-service';
 
@@ -13,6 +14,8 @@ let interactionsHandler: ((request: Request) => Promise<Response>) | undefined;
 export function getInteractionsHandler(): (request: Request) => Promise<Response> {
   if (!interactionsHandler) {
     const config = getConfig();
+    // Nested under `config` so a key can never shadow the log envelope.
+    logger.info('configuration resolved, handler ready', { config });
     const client = createMockServiceClient({
       baseUrl: config.mockServiceUrl,
       timeoutMs: config.upstreamTimeoutMs,

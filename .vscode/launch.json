@@ -1,0 +1,79 @@
+{
+  // Debug configurations for services/interaction-api.
+  // Breakpoints go in the TypeScript sources under services/interaction-api/src.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Dev server (vite dev) with the debugger attached. Handlers, service,
+      // client and domain code all run in this process, so breakpoints in
+      // src/server/**, src/clients/** and src/domain/** hit on every request.
+      // Needs the mock service on http://localhost:8080 (see the tasks below).
+      "name": "interaction-api: dev server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/services/interaction-api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "env": {
+        "LOG_LEVEL": "debug"
+      },
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      // The production bundle (node .output/server/index.mjs), rebuilt first.
+      // Use this to debug something that only reproduces in a built server.
+      "name": "interaction-api: built server",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/services/interaction-api",
+      "program": "${workspaceFolder}/services/interaction-api/.output/server/index.mjs",
+      "preLaunchTask": "interaction-api: build",
+      "env": {
+        "NODE_ENV": "production",
+        "LOG_LEVEL": "debug"
+      },
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      // Whole vitest suite, single-threaded so breakpoints are hit in-process.
+      "name": "interaction-api: all tests",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/services/interaction-api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["vitest", "run", "--no-file-parallelism", "--testTimeout=0"],
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      // Only the *.test.ts file open in the editor.
+      "name": "interaction-api: current test file",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/services/interaction-api",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["vitest", "run", "--no-file-parallelism", "--testTimeout=0", "${file}"],
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      // Attach to an already-running node started with --inspect, e.g.
+      //   node --inspect .output/server/index.mjs
+      // For the container, run it with --inspect=0.0.0.0:9229 and publish 9229.
+      "name": "interaction-api: attach to node (9229)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "localRoot": "${workspaceFolder}/services/interaction-api",
+      "remoteRoot": "/app",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    }
+  ]
+}

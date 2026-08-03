@@ -2,8 +2,16 @@ import type { ErrorResponseBody } from '../schemas';
 
 /** Small helpers shared by the route handlers. */
 
+/**
+ * A caller-supplied request id is echoed into headers, error bodies and logs,
+ * so it is only honoured when it is short and boring; anything else gets a
+ * fresh id rather than letting a client shape our log lines.
+ */
+const SAFE_REQUEST_ID = /^[\w.:-]{1,128}$/;
+
 export function requestIdFrom(request: Request): string {
-  return request.headers.get('x-request-id') ?? crypto.randomUUID();
+  const supplied = request.headers.get('x-request-id');
+  return supplied && SAFE_REQUEST_ID.test(supplied) ? supplied : crypto.randomUUID();
 }
 
 export function jsonResponse(status: number, body: unknown, requestId: string): Response {

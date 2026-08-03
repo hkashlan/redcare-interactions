@@ -53,6 +53,50 @@ describe('createInteractionsHandler', () => {
     expect(service.getInteractionsForProducts).toHaveBeenCalledWith(['04114918', '10019621']);
   });
 
+  // Most HTTP clients serialize arrays by repeating the parameter; reading only
+  // the first occurrence would evaluate half a basket and hide interactions.
+  it('reads every occurrence of a repeated productIds parameter', async () => {
+    const service = fakeService();
+    const handler = createInteractionsHandler(service);
+
+    await handler(get('/api/interactions?productIds=04114918&productIds=10019621'));
+
+    expect(service.getInteractionsForProducts).toHaveBeenCalledWith(['04114918', '10019621']);
+  });
+
+  it('mixes repeated and comma-separated ids', async () => {
+    const service = fakeService();
+    const handler = createInteractionsHandler(service);
+
+    await handler(get('/api/interactions?productIds=04114918,10019621&productIds=06313728'));
+
+    expect(service.getInteractionsForProducts).toHaveBeenCalledWith([
+      '04114918',
+      '10019621',
+      '06313728',
+    ]);
+  });
+
+  it('applies the 100-id limit after deduplication', async () => {
+    const service = fakeService();
+    const handler = createInteractionsHandler(service);
+    const repeated = Array.from({ length: 101 }, () => '04114918').join(',');
+
+    const response = await handler(get(`/api/interactions?productIds=${repeated}`));
+
+    expect(response.status).toBe(200);
+    expect(service.getInteractionsForProducts).toHaveBeenCalledWith(['04114918']);
+  });
+
+  it('rejects more than 100 distinct product ids', async () => {
+    const handler = createInteractionsHandler(fakeService());
+    const distinct = Array.from({ length: 101 }, (_, i) => `id-${i}`).join(',');
+
+    const response = await handler(get(`/api/interactions?productIds=${distinct}`));
+
+    expect(response.status).toBe(400);
+  });
+
   it('reports unknown products as partial success', async () => {
     const partial: InteractionResult = {
       products: [
@@ -142,5 +186,23 @@ describe('createInteractionsHandler', () => {
     const response = await handler(get('/api/interactions?productIds=04114918'));
 
     expect(response.headers.get('x-request-id')).toBeTruthy();
+  });
+
+  // The id lands in headers, error bodies and every log line, so a client
+  // must not be able to push unbounded or odd text into them. (Raw newlines
+  // never get this far — the Headers API rejects them at construction.)
+  it.each([
+    ['too long', 'x'.repeat(129)],
+    ['quotes and spaces', 'req "id" {level:error}'],
+    ['empty', ''],
+  ])('replaces an unusable incoming request id (%s)', async (_case, supplied) => {
+    const handler = createInteractionsHandler(fakeService());
+
+    const response = await handler(
+      get('/api/interactions?productIds=04114918', { 'x-request-id': supplied }),
+    );
+
+    expect(response.headers.get('x-request-id')).not.toBe(supplied);
+    expect(response.headers.get('x-request-id')).toMatch(/^[\w-]{36}$/);
   });
 });

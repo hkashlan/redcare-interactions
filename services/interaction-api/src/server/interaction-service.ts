@@ -9,6 +9,7 @@ import type {
   ResolvedProduct,
 } from './interaction-service.dto';
 import { cachedQuery, createQueryClient } from './query-client';
+import type { ApiProduct } from './schemas';
 
 export type * from './interaction-service.dto';
 
@@ -85,15 +86,15 @@ function toInteractionResult(
   catalog: Awaited<ReturnType<MockServiceClient['getInteractions']>>,
   basket: ResolvedProduct[],
 ): InteractionResult {
-  const knownProducts = basket
-    .map((entry) => entry.ingredients)
-    .filter((ingredients): ingredients is ProductIngredients => ingredients !== null);
+  const products: ApiProduct[] = [];
+  const known: ProductIngredients[] = [];
+  const unknownProductIds: string[] = [];
 
-  return {
-    products: basket.map((entry) => entry.product),
-    interactions: matchInteractions(catalog, knownProducts),
-    unknownProductIds: basket
-      .filter((entry) => entry.ingredients === null)
-      .map((entry) => entry.product.productId),
-  };
+  for (const entry of basket) {
+    products.push(entry.product);
+    if (entry.ingredients) known.push(entry.ingredients);
+    else unknownProductIds.push(entry.product.productId);
+  }
+
+  return { products, interactions: matchInteractions(catalog, known), unknownProductIds };
 }

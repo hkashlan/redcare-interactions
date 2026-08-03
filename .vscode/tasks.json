@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // preLaunchTask of the "built server" debug configuration.
+      "label": "interaction-api: build",
+      "type": "shell",
+      "command": "pnpm build",
+      "options": {
+        "cwd": "${workspaceFolder}/services/interaction-api"
+      },
+      "problemMatcher": []
+    },
+    {
+      // The dev server needs an upstream on localhost:8080.
+      "label": "mock-service: up",
+      "type": "shell",
+      "command": "docker compose up -d mock-service",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "mock-service: down",
+      "type": "shell",
+      "command": "docker compose stop mock-service",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

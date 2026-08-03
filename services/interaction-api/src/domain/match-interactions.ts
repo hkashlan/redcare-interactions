@@ -31,7 +31,7 @@ export function matchInteractions(
 function indexIngredientsByProduct(products: readonly ProductIngredients[]): IngredientIndex {
   const index: IngredientIndex = new Map();
 
-  for (const product of dedupeByProductId(products)) {
+  for (const product of products) {
     for (const ingredientId of product.ingredientIds) {
       const holders = index.get(ingredientId) ?? [];
       holders.push(product.productId);
@@ -40,14 +40,6 @@ function indexIngredientsByProduct(products: readonly ProductIngredients[]): Ing
   }
 
   return index;
-}
-
-function dedupeByProductId(products: readonly ProductIngredients[]): ProductIngredients[] {
-  const byId = new Map<string, ProductIngredients>();
-  for (const product of products) {
-    if (!byId.has(product.productId)) byId.set(product.productId, product);
-  }
-  return [...byId.values()];
 }
 
 function appliesTo(entry: CatalogEntry, basket: IngredientIndex): boolean {

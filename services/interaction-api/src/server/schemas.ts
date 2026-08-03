@@ -17,20 +17,25 @@ const productIdSchema = z
   .min(1, 'productId must not be empty')
   .max(64, 'productId too long');
 
-/** Query: ?productIds=04114918,10019621 — comma-separated, deduplicated. */
+/**
+ * Query: ?productIds=04114918,10019621 — comma-separated and deduplicated.
+ *
+ * Takes every occurrence of the parameter, because clients also serialize
+ * lists by repeating it (?productIds=a&productIds=b); reading only the first
+ * would silently evaluate half a basket. The 100-id cap is applied after
+ * deduplication, so a repeated id costs a client nothing.
+ */
 export const interactionsQuerySchema = z.object({
   productIds: z
-    .string({ error: 'productIds query parameter is required' })
-    .transform((value) => value.split(','))
-    .pipe(
-      z
-        .array(productIdSchema)
-        .min(1, 'at least one productId is required')
-        .max(100, 'too many productIds (max 100)'),
-    )
-    .transform((ids) => [...new Set(ids)]),
+    .array(z.string())
+    .min(1, 'productIds query parameter is required')
+    .transform((values) => values.flatMap((value) => value.split(',')))
+    .pipe(z.array(productIdSchema).min(1, 'at least one productId is required'))
+    .transform((ids) => [...new Set(ids)])
+    .pipe(z.array(z.string()).max(100, 'too many productIds (max 100)')),
 });
 
+/** A requested product; `name` is present only when the status is "resolved". */
 export const apiProductSchema = z.discriminatedUnion('status', [
   z.object({
     productId: z.string(),
@@ -43,6 +48,7 @@ export const apiProductSchema = z.discriminatedUnion('status', [
   }),
 ]);
 
+/** One applicable interaction — the widget renders one warning card per entry. */
 export const apiInteractionSchema = z.object({
   interactionId: z.string(),
   texts: z.array(z.string()),
@@ -59,7 +65,7 @@ export const interactionsResponseBodySchema = z.object({
   }),
 });
 
-/** Error body shape shared by 400/502 responses. */
+/** Error body shape shared by 400/500/502 responses. */
 export const errorResponseBodySchema = z.object({
   error: z.object({
     code: z.enum(['INVALID_REQUEST', 'UPSTREAM_UNAVAILABLE', 'INTERNAL_ERROR']),
