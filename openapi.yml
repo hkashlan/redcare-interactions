@@ -1,0 +1,110 @@
+openapi: 3.0.0
+info:
+  title: Product Interactions API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /product:
+    get:
+      summary: Get product information by product id
+      parameters:
+        - in: query
+          name: productId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '404':
+          description: Product not found
+  /ingredients:
+    get:
+      summary: Get ingredient ids by product id
+      parameters:
+        - in: query
+          name: productId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ingredients found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientsResponse'
+        '404':
+          description: Product not found
+  /interactions:
+    get:
+      summary: Get interaction data
+      description: Returns interaction data.
+      responses:
+        '200':
+          description: Interaction data returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InteractionsResponse'
+components:
+  schemas:
+    ProductResponse:
+      type: object
+      required:
+        - productId
+        - name
+        - description
+      properties:
+        productId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+    IngredientsResponse:
+      type: object
+      required:
+        - productId
+        - ingredientIds
+      properties:
+        productId:
+          type: string
+        ingredientIds:
+          type: array
+          items:
+            type: string
+    InteractionsResponse:
+      type: object
+      required:
+        - interactions
+      properties:
+        interactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/InteractionCatalogEntry'
+    InteractionCatalogEntry:
+      type: object
+      required:
+        - interactionId
+        - requiredIngredientIds
+        - interactionTexts
+      properties:
+        interactionId:
+          type: string
+        requiredIngredientIds:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: string
+        interactionTexts:
+          type: array
+          items:
+            type: string
+          description: Texts to display when all required ingredients are present.

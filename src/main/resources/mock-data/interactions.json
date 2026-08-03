@@ -1,0 +1,73 @@
+[
+  {
+    "interactionId": "int-ibu-antihypertensive",
+    "requiredIngredientIds": ["ing-ibu-001"],
+    "interactionTexts": [
+      "Ibuprofen can reduce the effect of some blood pressure medicines.",
+      "Use the product leaflet or pharmacist advice to decide whether monitoring is needed."
+    ]
+  },
+  {
+    "interactionId": "int-vitc-lab-tests",
+    "requiredIngredientIds": ["ing-vitc-003"],
+    "interactionTexts": [
+      "Vitamin C may affect certain laboratory test results at higher doses."
+    ]
+  },
+  {
+    "interactionId": "int-ibu-asa",
+    "requiredIngredientIds": ["ing-ibu-001", "ing-asa-002"],
+    "interactionTexts": [
+      "Ibuprofen and acetylsalicylic acid are both NSAID-related pain medicines and may increase gastrointestinal irritation.",
+      "Combining NSAIDs can increase the risk of serious side effects such as stomach ulcers."
+    ]
+  },
+  {
+    "interactionId": "int-asa-alcohol",
+    "requiredIngredientIds": ["ing-asa-002"],
+    "interactionTexts": [
+      "Drinking too much alcohol while taking aspirin can irritate the stomach.",
+      "The combination may be relevant for customers with stomach problems or bleeding risk."
+    ]
+  },
+  {
+    "interactionId": "int-ibu-alcohol",
+    "requiredIngredientIds": ["ing-ibu-001"],
+    "interactionTexts": [
+      "Drinking a lot of alcohol while taking ibuprofen can increase the risk of side effects.",
+      "The warning is especially relevant when ibuprofen is taken at higher doses or for longer periods."
+    ]
+  },
+  {
+    "interactionId": "int-paracetamol-alcohol",
+    "requiredIngredientIds": ["ing-para-006"],
+    "interactionTexts": [
+      "Regular heavy alcohol use can make paracetamol safety checks more important.",
+      "Customers should follow the product leaflet and ask a healthcare professional when unsure."
+    ]
+  },
+  {
+    "interactionId": "int-simvastatin-grapefruit",
+    "requiredIngredientIds": ["ing-sim-004"],
+    "interactionTexts": [
+      "Grapefruit juice can affect the way some medicines are processed by the body.",
+      "For simvastatin-like products, grapefruit may increase the risk of unwanted effects."
+    ]
+  },
+  {
+    "interactionId": "int-warfarin-asa",
+    "requiredIngredientIds": ["ing-war-005", "ing-asa-002"],
+    "interactionTexts": [
+      "Warfarin and acetylsalicylic acid can both affect bleeding risk.",
+      "This combination should be checked carefully before a customer-facing warning is suppressed."
+    ]
+  },
+  {
+    "interactionId": "int-warfarin-ibu",
+    "requiredIngredientIds": ["ing-war-005", "ing-ibu-001"],
+    "interactionTexts": [
+      "Warfarin and ibuprofen may increase bleeding risk when used together.",
+      "A frontend widget should show this as a pair interaction only when both ingredients are present."
+    ]
+  }
+]

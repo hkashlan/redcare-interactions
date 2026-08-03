@@ -1,0 +1,30 @@
+[
+  {
+    "productId": "04114918",
+    "ingredientIds": ["ing-ibu-001", "ing-exc-010"]
+  },
+  {
+    "productId": "10019621",
+    "ingredientIds": ["ing-asa-002", "ing-exc-010"]
+  },
+  {
+    "productId": "08154711",
+    "ingredientIds": ["ing-vitc-003"]
+  },
+  {
+    "productId": "05501634",
+    "ingredientIds": ["ing-sim-004"]
+  },
+  {
+    "productId": "06313728",
+    "ingredientIds": ["ing-war-005"]
+  },
+  {
+    "productId": "03405363",
+    "ingredientIds": ["ing-para-006"]
+  },
+  {
+    "productId": "99999999",
+    "ingredientIds": []
+  }
+]

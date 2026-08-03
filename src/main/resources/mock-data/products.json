@@ -1,0 +1,37 @@
+[
+  {
+    "productId": "04114918",
+    "name": "Ibuprofen 400",
+    "description": "Pain relief tablets with ibuprofen."
+  },
+  {
+    "productId": "10019621",
+    "name": "Aspirin Protect 100",
+    "description": "Low-dose acetylsalicylic acid tablets."
+  },
+  {
+    "productId": "08154711",
+    "name": "Vitamin C Depot",
+    "description": "Food supplement with slow-release vitamin C."
+  },
+  {
+    "productId": "05501634",
+    "name": "Simvastatin 20",
+    "description": "Cholesterol-lowering tablets with simvastatin."
+  },
+  {
+    "productId": "06313728",
+    "name": "Warfarin 5",
+    "description": "Anticoagulant tablets with warfarin."
+  },
+  {
+    "productId": "03405363",
+    "name": "Paracetamol 500",
+    "description": "Pain relief tablets with paracetamol."
+  },
+  {
+    "productId": "99999999",
+    "name": "Mystery Balm",
+    "description": "Demo product intentionally stored without ingredient mappings."
+  }
+]
