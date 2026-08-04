@@ -51,6 +51,9 @@ async function read<Schema extends z.ZodType>(
   schema: Schema,
 ): Promise<z.infer<Schema> | null> {
   const startedAt = performance.now();
+  const durationMs = () => Math.round(performance.now() - startedAt);
+
+  logger.debug('upstream read started', { path, timeoutMs: UPSTREAM_TIMEOUT_MS });
 
   let response: Response;
   try {
@@ -59,23 +62,53 @@ async function read<Schema extends z.ZodType>(
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
   } catch (cause) {
+    // A timeout and a refused connection fail the same way here but mean very
+    // different things when someone reads the log, so name which one it was.
+    const timedOut = cause instanceof Error && cause.name === 'TimeoutError';
+    logger.error('upstream request failed', {
+      path,
+      reason: timedOut ? 'timeout' : 'network',
+      timeoutMs: UPSTREAM_TIMEOUT_MS,
+      error: cause instanceof Error ? cause.message : String(cause),
+      durationMs: durationMs(),
+    });
     throw new UpstreamError(`Request to mock service failed: GET ${path}`, { cause });
   }
 
   logger.debug('upstream read', {
     path,
     status: response.status,
-    durationMs: Math.round(performance.now() - startedAt),
+    durationMs: durationMs(),
   });
 
-  if (response.status === 404) return null;
+  if (response.status === 404) {
+    logger.debug('upstream reported not found', { path, durationMs: durationMs() });
+    return null;
+  }
   if (!response.ok) {
+    logger.error('upstream returned an error status', {
+      path,
+      status: response.status,
+      durationMs: durationMs(),
+    });
     throw new UpstreamError(`Mock service responded ${response.status} for GET ${path}`);
   }
 
   const body = await response.json().catch(() => undefined);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
+    // Contract drift: the upstream answered 200 with something we cannot read.
+    // The issue paths are what tells the on-call which field moved.
+    logger.error('upstream returned an unexpected body', {
+      path,
+      status: response.status,
+      bodyReadable: body !== undefined,
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      })),
+      durationMs: durationMs(),
+    });
     throw new UpstreamError(`Mock service returned an unexpected body for GET ${path}`, {
       cause: parsed.error,
     });
@@ -138,12 +171,24 @@ export async function readBasket(productIds: readonly string[]): Promise<Basket>
     })),
   );
 
+  const unknownProductIds = entries
+    .filter(({ ingredients }) => ingredients === null)
+    .map(({ productId }) => productId);
+
+  // Not an error — the caller reports these in `meta` — but a basket the
+  // upstream cannot resolve is worth seeing, and a rising rate means a
+  // catalog that has drifted away from what clients still send.
+  if (unknownProductIds.length > 0) {
+    logger.warn('basket contains product ids unknown upstream', {
+      requestedCount: productIds.length,
+      unknownProductIds,
+    });
+  }
+
   return {
     known: entries.flatMap(({ productId, ingredients }) =>
       ingredients ? [{ productId, ingredientIds: ingredients.ingredientIds }] : [],
     ),
-    unknownProductIds: entries
-      .filter(({ ingredients }) => ingredients === null)
-      .map(({ productId }) => productId),
+    unknownProductIds,
   };
 }

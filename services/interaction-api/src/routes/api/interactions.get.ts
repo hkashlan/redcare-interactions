@@ -64,11 +64,16 @@ export default defineHandler(async (event) => {
 
   const productIds = query.data;
 
+  logger.debug('interactions request accepted', { requestId, productCount: productIds.length });
+
   try {
     // The catalog and the basket are independent reads, so fan out at once.
     const [catalog, basket] = await Promise.all([readCatalog(), readBasket(productIds)]);
     // Only /ingredients can legitimately 404; a missing catalog is a broken upstream.
-    if (!catalog) throw new UpstreamError('Mock service has no interaction catalog');
+    if (!catalog) {
+      logger.error('interaction catalog missing upstream', { requestId });
+      throw new UpstreamError('Mock service has no interaction catalog');
+    }
 
     const interactions = matchInteractions(catalog.interactions, basket.known);
 
@@ -90,9 +95,18 @@ export default defineHandler(async (event) => {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const durationMs = Math.round(performance.now() - startedAt);
 
     if (error instanceof UpstreamError) {
-      logger.error('upstream unavailable, failing closed', { requestId, error: message });
+      // The read site already logged what went wrong upstream; this line records
+      // the decision taken because of it — a 502 instead of an empty warning list.
+      logger.error('upstream unavailable, failing closed', {
+        requestId,
+        productCount: productIds.length,
+        error: message,
+        cause: error.cause instanceof Error ? error.cause.message : undefined,
+        durationMs,
+      });
       return errorResponse(
         502,
         'UPSTREAM_UNAVAILABLE',
@@ -101,7 +115,15 @@ export default defineHandler(async (event) => {
       );
     }
 
-    logger.error('unexpected error', { requestId, error: message });
+    // Nothing below is expected to happen, so keep the stack: this is the only
+    // record of a bug in the handler or the domain rule.
+    logger.error('unexpected error', {
+      requestId,
+      productCount: productIds.length,
+      error: message,
+      stack: error instanceof Error ? error.stack : undefined,
+      durationMs,
+    });
     return errorResponse(500, 'INTERNAL_ERROR', 'Unexpected error', requestId);
   }
 });
