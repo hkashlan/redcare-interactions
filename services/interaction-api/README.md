@@ -114,6 +114,26 @@ Error responses share one body shape:
 
 Every response echoes the incoming `x-request-id` header (or a generated UUID) both as a response header and in error bodies, and the same id appears in the structured logs.
 
+## OpenAPI
+
+The endpoint publishes a machine-readable contract, so a consumer can generate a typed client instead of transcribing this README:
+
+| Route | What |
+| --- | --- |
+| `/_openapi.json` | OpenAPI 3.1 document |
+| `/_swagger` | Swagger UI — browse and call the endpoint |
+
+```bash
+curl http://localhost:3000/_openapi.json
+open http://localhost:3000/_swagger
+```
+
+Both are on in `pnpm dev` and in the production build (`openAPI.production: 'runtime'` in [`nitro.config.ts`](nitro.config.ts)) — if the spec should not be public, that is the line to drop. Nitro's other bundled UI (Scalar, `/_scalar`) is switched off, since one browsable view is enough and disabling it also keeps its route out of the document; the `/_nitro/**` task routes are filtered out of the handler list for the same reason.
+
+The operation lives next to the route it describes, at the top of [`src/routes/api/interactions.get.ts`](src/routes/api/interactions.get.ts), so a change to the endpoint and a change to its documentation are the same diff. The `productIds` parameter schema is derived from the same `productIdSchema` the handler validates with, rather than restated — only the 1–100 array bounds are written twice, because the composed query schema's `.transform()`s cannot round-trip through `z.toJSONSchema()`.
+
+> **Version caveat.** Nitro's documented `defineRouteMeta()` macro does not work on `nitro@3.0.260610-beta`: the build-time extraction behind it never runs, so the document would render the route with a default tag and a bare 200. The route file works around that by attaching the metadata to the exported handler, and explains both the mechanism and how to undo it. After a Nitro upgrade, check `/_swagger` still shows the operation — the failure mode is a bare document, not a build error.
+
 ## Logging
 
 [consola](https://github.com/unjs/consola) with a single reporter that emits one JSON line per event, so logs stay machine-parseable (consola's default formatting wraps objects over several lines, which a collector reads as several records):

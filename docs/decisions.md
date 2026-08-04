@@ -56,8 +56,6 @@ Query, response and upstream bodies are zod schemas, and every type is inferred 
 - **Upstream** — responses are parsed at the boundary, so a changed contract becomes a clear `UpstreamError` instead of an `undefined` deep in the matching code.
 - **Outbound** — our own responses are not re-validated at runtime. They are built from `matchInteractions()`'s return type, so the compiler already catches a malformed reply at build time.
 
-*Tradeoff:* the contract is written in prose, not published as a spec. Generating one from these schemas (e.g. `zod-openapi`) is the next step if a consumer wants a typed client.
-
 ## 6. `GET /api/interactions?productIds=a,b` (comma-separated)
 
 GET because the call only reads and can be repeated safely: responses are cacheable, and the URL can be shared or bookmarked. It also mirrors the real shop URL (`/wechselwirkungen/?productIds=…`).
@@ -128,6 +126,16 @@ The mock service moved to `services/mock-service/` and the new service sits next
 
 *Tradeoff:* the vendored mock service can drift from the original. It is treated as read-only and left unmodified for that reason.
 
+## 14. A published OpenAPI document, declared next to the route
+
+A consumer should be able to generate a client instead of copying a README. Nitro already builds an OpenAPI 3.1 document and serves Swagger UI behind `experimental.openAPI`, so this costs one config flag and one metadata block — no extra dependency, no separate spec file to keep in sync.
+
+The operation is declared in the route file it describes, so the endpoint and its docs change in the same diff. The `productIds` parameter comes from the same `productIdSchema` the handler validates with, so the per-id rules are written once.
+
+It is served in production too (`openAPI.production: 'runtime'`), since decision 8 assumes an internal BFF behind the shop's edge. For a public deployment, remove one line.
+
+*Tradeoff:* Nitro's `defineRouteMeta()` macro does not work on `nitro@3.0.260610-beta` — the metadata is silently dropped. The route attaches it to the exported handler instead, and documents how to revert once a stable release fixes the macro. Also, only the query parameter comes from a schema; the four response bodies are described in prose, so the document explains the endpoint but will not generate response types (see decision 5).
+
 ## Assumptions
 
 - **The widget already has the product name and description.** It rendered the basket before calling us, so the endpoint neither fetches nor returns them (see decision 7). Cards are matched back to products client-side by id.
@@ -146,5 +154,6 @@ The mock service moved to `services/mock-service/` and the new service sits next
 - **Resilience:** retry failed upstream reads with backoff, add a circuit breaker, and allow a *bounded* stale window (`swr: true` with an explicit `staleMaxAge`) so a short blip is absorbed without the unbounded staleness decision 9 rules out.
 - **Caching at scale:** point Nitro's `cache` mount at a shared store (e.g. Redis) in `nitro.config.ts`, or use upstream ETag / `Cache-Control`, once instance count or data size grows.
 - **Observability:** metrics (request rate, latency, error rate, cache hit ratio, upstream latency), and tracing with OpenTelemetry — pass the W3C `traceparent` header on to the mock service, so one request can be followed across both services instead of only correlated by id here (see decision 11).
-- **Tests:** a contract test generated from the upstream `openapi.yml`, so the test server cannot drift from the real one; a smoke test in CI that runs `docker compose up` and repeats the root README's curls against the actual Java service; and a published machine-readable contract for our own consumers.
+- **Tests:** a contract test generated from the upstream `openapi.yml`, so the test server cannot drift from the real one; and a smoke test in CI that runs `docker compose up` and repeats the root README's curls against the actual Java service.
+- **Response schemas in the spec:** give the response bodies zod schemas so the published document (decision 14) generates response types, not just request ones — and assert in CI that `/_openapi.json` still describes the operation, which would have caught the Nitro regression that decision documents.
 - **API evolution:** a `POST` variant for large baskets, and severity levels on interactions if the data ever provides them.

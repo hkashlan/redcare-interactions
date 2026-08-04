@@ -15,7 +15,7 @@
  * read the data would suppress a medical warning.
  */
 
-import { defineHandler } from 'nitro';
+import { defineHandler, defineRouteMeta } from 'nitro';
 import { z } from 'zod';
 import { readBasket, readCatalog, UpstreamError } from '../../client/mock-service';
 import { matchInteractions } from '../../domain/match-interactions';
@@ -44,7 +44,50 @@ const productIdsSchema = z
   .transform((ids) => [...new Set(ids)])
   .refine((ids) => ids.length <= 100, 'too many productIds (max 100)');
 
-export default defineHandler(async (event) => {
+
+const { $schema: _, ...productIdsParamSchema } = z.toJSONSchema(
+  z.array(productIdSchema).min(1).max(100),
+);
+
+const routeMeta = defineRouteMeta({
+  openAPI: {
+    operationId: 'getInteractions',
+    tags: ['interactions'],
+    summary: 'List interactions for a basket of products',
+    description:
+      'Returns every interaction whose required ingredients are all present in the basket. Unknown product ids are skipped and reported in `meta.unknownProductIds` alongside a 200; an unreadable upstream answers 502 rather than an empty list, because reporting "no interactions" would suppress a medical warning.',
+    parameters: [
+      {
+        in: 'query',
+        name: 'productIds',
+        required: true,
+        description:
+          'Product ids to evaluate, comma-separated. Repeating the parameter (`?productIds=a&productIds=b`) works too and is merged with the comma-separated form; ids are deduplicated before the 100-id cap applies.',
+        // `form` + `explode: false` is the comma-separated spelling; the repeated
+        // spelling cannot be expressed at the same time, hence the description.
+        style: 'form',
+        explode: false,
+        schema: productIdsParamSchema,
+        example: '04114918,10019621',
+      },
+    ],
+    responses: {
+      200: {
+        description:
+          'Interactions that apply to the basket. An empty `interactions` array means the basket was read successfully and nothing matched.',
+      },
+      400: {
+        description: 'The `productIds` parameter is missing, empty, malformed or over the cap.',
+      },
+      502: {
+        description: 'Interaction data could not be read upstream; failing closed, safe to retry.',
+      },
+      500: { description: 'Unexpected error in the service itself.' },
+    },
+  },
+});
+
+const handler = defineHandler(async (event) => {
   const requestId = requestIdFrom(event.req);
   const startedAt = performance.now();
 
@@ -127,3 +170,7 @@ export default defineHandler(async (event) => {
     return errorResponse(500, 'INTERNAL_ERROR', 'Unexpected error', requestId);
   }
 });
+
+// `?meta` collapses to this module's default export (see routeMeta above), so
+// the OpenAPI operation rides on the handler itself.
+export default Object.assign(handler, routeMeta);

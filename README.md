@@ -61,6 +61,8 @@ curl 'http://localhost:3000/api/interactions'                               # mi
 
 To see the fail-closed behaviour: `docker compose stop mock-service`, then repeat the first curl — the API answers `502` with code `UPSTREAM_UNAVAILABLE` instead of pretending there are no interactions.
 
+The endpoint documents itself: <http://localhost:3000/_swagger> browses and calls it, and <http://localhost:3000/_openapi.json> is the OpenAPI 3.1 document behind it.
+
 ## Local development (without Compose)
 
 Terminal 1 — mock service:
@@ -92,6 +94,7 @@ One endpoint serves the widget: `GET /api/interactions?productIds=a,b,c`.
   - Upstream failure or timeout → **fail closed** (502): if ingredients are unknowable, the API must not imply "no interactions".
   - Invalid input → 400 with per-field issues.
 - **Diagnosability** — structured JSON logs via consola (one line per request, plus one per upstream read at `LOG_LEVEL=debug`), and an `x-request-id` honoured or generated and echoed on every response.
+- **Published contract** — an OpenAPI 3.1 document (`/_openapi.json`) with Swagger UI (`/_swagger`), declared next to the route so the endpoint and its documentation change in one diff.
 
 Full API reference: [services/interaction-api/README.md](services/interaction-api/README.md). Rationale and tradeoffs: [docs/decisions.md](docs/decisions.md).
 
