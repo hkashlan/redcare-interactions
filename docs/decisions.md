@@ -140,8 +140,11 @@ The mock service moved to `services/mock-service/` and the new service sits next
 
 ## What I would do next in production
 
-- **Resilience:** retries with backoff and jitter for upstream reads, a circuit breaker, and a *bounded* stale-while-revalidate window (`swr: true` with an explicit `staleMaxAge`) so short blips are absorbed without the unbounded staleness decision 9 rules out.
+- **Health endpoint:** a `GET /health` the container and load balancer can call to see if the service is up.
+- **Error tracking:** send exceptions to a collector like Sentry or PostHog, so failures are seen without reading logs.
+- **Releases:** semantic-release, so versions and changelogs come from the commits instead of by hand.
+- **Resilience:** retry failed upstream reads with backoff, add a circuit breaker, and allow a *bounded* stale window (`swr: true` with an explicit `staleMaxAge`) so a short blip is absorbed without the unbounded staleness decision 9 rules out.
 - **Caching at scale:** point Nitro's `cache` mount at a shared store (e.g. Redis) in `nitro.config.ts`, or use upstream ETag / `Cache-Control`, once instance count or data size grows.
-- **Observability:** metrics (request rate, latency, error rate, cache hit ratio, upstream latency).
+- **Observability:** metrics (request rate, latency, error rate, cache hit ratio, upstream latency), and tracing with OpenTelemetry — pass the W3C `traceparent` header on to the mock service, so one request can be followed across both services instead of only correlated by id here (see decision 11).
 - **Tests:** a contract test generated from the upstream `openapi.yml`, so the test server cannot drift from the real one; a smoke test in CI that runs `docker compose up` and repeats the root README's curls against the actual Java service; and a published machine-readable contract for our own consumers.
 - **API evolution:** a `POST` variant for large baskets, and severity levels on interactions if the data ever provides them.
