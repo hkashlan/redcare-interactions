@@ -7,7 +7,7 @@ Solution for the Redcare product interactions coding challenge ([challenge.md](c
 | Path | Description |
 | --- | --- |
 | [services/mock-service](services/mock-service) | Provided Java/Spring Boot mock service (treated as an external dependency), port 8080 |
-| [services/interaction-api](services/interaction-api) | **The solution**: interaction API for the frontend widget (TypeScript, TanStack Start, API-only), port 3000 |
+| [services/interaction-api](services/interaction-api) | **The solution**: interaction API for the frontend widget (TypeScript, Nitro, API-only), port 3000 |
 | [docs/architecture.md](docs/architecture.md) | Component and request-flow diagrams |
 | [docs/decisions.md](docs/decisions.md) | Design decisions, tradeoffs, assumptions, production notes |
 
@@ -57,7 +57,6 @@ curl 'http://localhost:3000/api/interactions?productIds=06313728,04114918'  # wa
 curl 'http://localhost:3000/api/interactions?productIds=99999999'           # product with no ingredients → no warnings
 curl 'http://localhost:3000/api/interactions?productIds=04114918,00000000'  # unknown id → partial success (200)
 curl 'http://localhost:3000/api/interactions'                               # missing parameter → 400
-curl 'http://localhost:3000/api/health'                                     # liveness probe
 ```
 
 To see the fail-closed behaviour: `docker compose stop mock-service`, then repeat the first curl — the API answers `502` with code `UPSTREAM_UNAVAILABLE` instead of pretending there are no interactions.
@@ -92,13 +91,13 @@ One endpoint serves the widget: `GET /api/interactions?productIds=a,b,c`.
   - Unknown product id (upstream 404) → **partial success** (200): the id is listed in `meta.unknownProductIds`, but warnings for the rest of the basket are still returned. One delisted product must not suppress everyone else's warnings.
   - Upstream failure or timeout → **fail closed** (502): if ingredients are unknowable, the API must not imply "no interactions".
   - Invalid input → 400 with per-field issues.
-- **Diagnosability** — structured JSON logs, an `x-request-id` honoured or generated and echoed on every response, `GET /api/health`.
+- **Diagnosability** — structured JSON logs via consola (one line per request, plus one per upstream read at `LOG_LEVEL=debug`), and an `x-request-id` honoured or generated and echoed on every response.
 
 Full API reference: [services/interaction-api/README.md](services/interaction-api/README.md). Rationale and tradeoffs: [docs/decisions.md](docs/decisions.md).
 
 ## Notes for reviewers
 
-- The service is written in TypeScript — the challenge allows any technology, and I chose the stack I'm most fluent in. The design itself is language-agnostic: thin handlers → service → pure domain module → typed client.
-- Upstream reads go through a per-instance read-through fetch cache with short TTLs (TTL, concurrent-fetch dedup, no caching of failures — no dependency). Safe with multiple instances; a distributed cache is a production step, not a requirement here.
-- The core matching logic is a pure function with no I/O, unit-tested in isolation; client, service, and handlers each have their own test seams (all developed test-first).
+- The service is written in TypeScript on Nitro — the challenge allows any technology, and I chose the stack I'm most fluent in.
+- **It is deliberately five source files**, each named for what it owns rather than for a layer: the endpoint (`routes/api/interactions.get.ts`), the upstream (`client/mock-service.ts`), the business rule (`domain/match-interactions.ts`), and two endpoint-agnostic utilities (`util/http.ts`, `util/logger.ts`). There is no service object between the route and the client, no client interface, no factory taking dependencies as arguments and no DTO file per module — those exist to make layers injectable, and with one endpoint there is nothing to inject.
+- Anything the platform already does well is delegated to it: caching to `nitro/cache` (`defineCachedFunction`, 30 s TTL, `swr: false` — read-through TTLs, concurrent-fetch dedup, no caching of failures), configuration to Nitro's `runtimeConfig`, and logging to consola with a JSON reporter. That is three former hand-rolled modules — a fetch cache, a config loader, a logger — that are now defaults instead of code.
 - Assumptions and "what I'd do next in production" are listed in [docs/decisions.md](docs/decisions.md).

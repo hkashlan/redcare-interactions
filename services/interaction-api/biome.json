@@ -5,9 +5,6 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
-  "files": {
-    "includes": ["**", "!**/routeTree.gen.ts"]
-  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

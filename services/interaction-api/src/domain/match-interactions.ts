@@ -6,13 +6,26 @@
  * present in the union of ingredients across the selected products.
  */
 
-import type {
-  CatalogEntry,
-  MatchedInteraction,
-  ProductIngredients,
-} from './match-interactions.dto';
+/** The ingredients of one product in the basket. */
+export interface ProductIngredients {
+  productId: string;
+  ingredientIds: readonly string[];
+}
 
-export type * from './match-interactions.dto';
+/** One entry of the upstream interaction catalog. */
+export interface CatalogEntry {
+  interactionId: string;
+  requiredIngredientIds: readonly string[];
+  interactionTexts: readonly string[];
+}
+
+/** One interaction that applies to the basket — the widget renders one card per entry. */
+export interface MatchedInteraction {
+  interactionId: string;
+  texts: string[];
+  involvedProductIds: string[];
+  involvedIngredientIds: string[];
+}
 
 /** ingredient id -> product ids containing it, in basket order. */
 type IngredientIndex = Map<string, string[]>;
